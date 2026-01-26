@@ -1,0 +1,27 @@
+openapi: 3.1.0
+info:
+  title: Moozo API
+  version: 1.0.0
+paths:
+  /docs:
+    $ref: "./paths/docs.yaml"
+
+  /docs/openapi.yaml:
+   $ref: "./paths/docs_openapi.yaml"
+
+  /hello:
+    get:
+      operationId: hello
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                properties:
+                  message:
+                    type: string
+                    example: Hello, World!

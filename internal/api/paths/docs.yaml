@@ -1,0 +1,11 @@
+get:
+  operationId: getDocumentation
+  summary: Get API documentation (Swagger UI)
+  x-internal: true
+  responses:
+    '200':
+      description: HTML page with Swagger UI
+      content:
+        text/html:
+          schema:
+            type: string
