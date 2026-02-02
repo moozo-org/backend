@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-//go:embed bundled/server.yaml
+//go:embed bundled/swagger.yaml
 var specFile embed.FS
 
 // GetDocumentation implémente l'opération getDocumentation
@@ -35,7 +35,7 @@ func (h *Handler) GetDocumentation(ctx context.Context) (generated.GetDocumentat
 
 // GetOpenAPISpec implémente l'opération getOpenAPISpec
 func (h *Handler) GetOpenAPISpec(ctx context.Context) (generated.GetOpenAPISpecOK, error) {
-	data, err := specFile.ReadFile("bundled/server.yaml")
+	data, err := specFile.ReadFile("bundled/swagger.yaml")
 	if err != nil {
 		return generated.GetOpenAPISpecOK{}, err
 	}
