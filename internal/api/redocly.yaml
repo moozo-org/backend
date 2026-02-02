@@ -1,0 +1,12 @@
+apis:
+  main:
+    root: internal/api/server.yaml
+
+decorators:
+  remove-x-internal:
+    subject:
+      type: Operation
+      filterIn:
+        property: x-internal
+        value: true
+    action: remove

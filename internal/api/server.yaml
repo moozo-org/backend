@@ -3,6 +3,12 @@ info:
   title: Moozo API
   version: 1.0.0
 paths:
+  /docs:
+    $ref: "./paths/docs.yaml"
+
+  /docs/openapi.yaml:
+   $ref: "./paths/docs_openapi.yaml"
+
   /hello:
     get:
       operationId: hello

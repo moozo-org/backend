@@ -1,0 +1,11 @@
+get:
+  operationId: getOpenAPISpec
+  summary: Get OpenAPI specification
+  x-internal: true
+  responses:
+    '200':
+      description: OpenAPI specification in YAML
+      content:
+        application/yaml:
+          schema:
+            type: string

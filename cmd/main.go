@@ -1,35 +1,22 @@
 package main
 
 import (
+	"log"
 	"moozo/internal/api"
 	"moozo/internal/api/generated"
-
-	"github.com/labstack/echo/v5"
-	"github.com/labstack/echo/v5/middleware"
+	"net/http"
 )
 
 func main() {
-	e := echo.New()
-	e.Use(middleware.RequestLogger())
-
-	// Instantiate the handler
 	handler := api.NewHandler()
 
-	// Create ogen server with the handler
 	srv, err := generated.NewServer(handler)
 	if err != nil {
-		e.Logger.Error("failed to start server", "error", err)
+		log.Fatal("failed to create server:", err)
 	}
 
-	// This registers all the routes defined in your OpenAPI spec
-	e.Any("/*", echo.WrapHandler(srv))
-
-	// Start server
-	if err := e.Start(":8080"); err != nil {
-		e.Logger.Error("failed to start server", "error", err)
+	log.Println("starting server on http://localhost:8080")
+	if err := http.ListenAndServe(":8080", srv); err != nil {
+		log.Fatal("failed to start server:", err)
 	}
-}
-
-type Config struct {
-	Port int `default:"8080"`
 }
