@@ -3,14 +3,14 @@
 # --- build stage -------------------------------------------------------------
 FROM golang:1.27-alpine AS builder
 
-# redocly (bundles the OpenAPI spec) is a Node tool; ogen comes from go.mod's
-# `tool` directive. Both are needed by `go generate ./...`.
-ARG REDOCLY_VERSION=2.53.1
-RUN apk add --no-cache nodejs npm \
-    && npm install -g --no-fund --no-audit "@redocly/cli@${REDOCLY_VERSION}" \
-    && npm cache clean --force
-
 WORKDIR /src
+
+# redocly (bundles the OpenAPI spec) is a Node tool pinned in package.json;
+# ogen comes from go.mod's `tool` directive. Both are needed by `go generate`.
+COPY package.json package-lock.json ./
+RUN apk add --no-cache nodejs npm \
+    && npm ci --no-fund --no-audit \
+    && npm cache clean --force
 
 # Dependencies first so they stay cached across source changes.
 COPY go.mod go.sum ./
@@ -23,8 +23,7 @@ COPY . .
 # from the spec rather than whatever happens to be on the host.
 RUN --mount=type=cache,target=/go/pkg/mod go generate ./...
 
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd
 
 # --- runtime stage -----------------------------------------------------------

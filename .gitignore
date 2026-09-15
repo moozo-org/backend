@@ -9,3 +9,6 @@ bundled/
 .env
 # Local compose overrides
 compose.override.yaml
+
+# Node build tooling
+node_modules/

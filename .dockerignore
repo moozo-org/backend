@@ -10,3 +10,4 @@ docker-compose.yml
 
 internal/api/bundled/
 internal/api/generated/
+node_modules

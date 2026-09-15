@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GOLANGCI_LINT_VERSION: v2.13.2
+
+jobs:
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: ./.github/actions/generate
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+
+  test:
+    name: go test
+    # Drop this line to run the two jobs in parallel instead.
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: ./.github/actions/generate
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      # ogen output would otherwise dominate the percentage and hide the
+      # coverage of hand-written code.
+      - name: Drop generated code from coverage
+        run: grep -v '^moozo/internal/api/generated/' coverage.out > coverage.filtered.out
+
+      - name: Coverage report
+        run: |
+          go tool cover -func=coverage.filtered.out
+          go tool cover -html=coverage.filtered.out -o coverage.html
+          {
+            echo '### Coverage'
+            echo
+            echo '```'
+            go tool cover -func=coverage.filtered.out | tail -n 20
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage
+          path: |
+            coverage.filtered.out
+            coverage.html
+          retention-days: 14
