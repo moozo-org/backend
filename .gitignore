@@ -7,3 +7,5 @@ bundled/
 
 # Secrets
 .env
+# Local compose overrides
+compose.override.yaml

@@ -1,0 +1,12 @@
+.git
+.gitignore
+.idea
+cmd/Dockerfile
+.dockerignore
+compose.yaml
+docker-compose.yml
+.env
+*.md
+
+internal/api/bundled/
+internal/api/generated/
