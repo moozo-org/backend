@@ -1,18 +1,14 @@
 package api
 
 import (
-	"context"
-	"embed"
-	"moozo/internal/api/generated"
-	"strings"
+	_ "embed"
+	"net/http"
 )
 
-//go:embed bundled/swagger.yaml
-var specFile embed.FS
+//go:embed bundled/server.yaml
+var specFile []byte
 
-// GetDocumentation implémente l'opération getDocumentation
-func (h *Handler) GetDocumentation(ctx context.Context) (generated.GetDocumentationOK, error) {
-	html := `<!DOCTYPE html>
+const docsHTML = `<!DOCTYPE html>
 <html>
 <head>
     <title>API Documentation</title>
@@ -30,15 +26,14 @@ func (h *Handler) GetDocumentation(ctx context.Context) (generated.GetDocumentat
 </body>
 </html>`
 
-	return generated.GetDocumentationOK{Data: strings.NewReader(html)}, nil
+// ServeDocs serves the Swagger UI.
+func (h *Handler) ServeDocs(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(docsHTML))
 }
 
-// GetOpenAPISpec implémente l'opération getOpenAPISpec
-func (h *Handler) GetOpenAPISpec(ctx context.Context) (generated.GetOpenAPISpecOK, error) {
-	data, err := specFile.ReadFile("bundled/swagger.yaml")
-	if err != nil {
-		return generated.GetOpenAPISpecOK{}, err
-	}
-
-	return generated.GetOpenAPISpecOK{Data: strings.NewReader(string(data))}, nil
+// ServeSpec serves the OpenAPI spec.
+func (h *Handler) ServeSpec(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml")
+	_, _ = w.Write(specFile)
 }

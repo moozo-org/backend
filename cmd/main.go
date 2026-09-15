@@ -15,8 +15,13 @@ func main() {
 		log.Fatal("failed to create server:", err)
 	}
 
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /docs", handler.ServeDocs)
+	mux.HandleFunc("GET /docs/openapi.yaml", handler.ServeSpec)
+	mux.Handle("/", srv)
+
 	log.Println("starting server on http://localhost:8080")
-	if err := http.ListenAndServe(":8080", srv); err != nil {
+	if err := http.ListenAndServe(":8080", mux); err != nil {
 		log.Fatal("failed to start server:", err)
 	}
 }
