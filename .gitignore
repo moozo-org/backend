@@ -2,8 +2,8 @@
 .idea/
 
 # Generated
-generated/
-bundled/
+internal/api/generated/
+internal/api/bundled/
 
 # Secrets
 .env

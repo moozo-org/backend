@@ -19,3 +19,25 @@ paths:
                   message:
                     type: string
                     example: Hello, World!
+        default:
+          $ref: "#/components/responses/Error"
+components:
+  responses:
+    Error:
+      description: Unexpected error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      required:
+        - error_message
+      properties:
+        error_message:
+          type: string
+          example: Internal Server Error
+        debug:
+          type: string
+          description: Underlying error; omitted unless PRODUCTION is false.

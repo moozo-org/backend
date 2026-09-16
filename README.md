@@ -68,19 +68,22 @@ They're plain `net/http` handlers mounted on a `ServeMux` in `main.go`, ahead of
 the ogen server. They serve static content, so codegen bought nothing, and
 keeping them out means the published spec describes only real API surface.
 
-This also makes them trivial to gate later — wrap the two `HandleFunc` calls in
-a conditional and they cease to exist when disabled, rather than returning 404
-from a route that's still registered.
+They are registered only when `PRODUCTION` is false, so in production the
+routes cease to exist rather than returning 404 from a registered path.
 
 ## Configuration
 
-| Variable | Default (compose) | Notes |
-|---|---|---|
-| `MONGO_URI` | `mongodb://mongo:27017` | No auth — local development only |
-| `MONGO_DB` | `moozo` | |
+Loaded from the environment at startup (`internal/config`), all names uppercase.
+See `.env.example`.
 
-> **Not yet wired up.** The Go code has no MongoDB driver; these are plumbed
-> through compose ready for when the connection lands.
+| Variable | Default | Notes |
+|---|---|---|
+| `PORT` | `8080` | |
+| `PRODUCTION` | `false` | When true, `/docs` and `/docs/openapi.yaml` are not registered |
+| `MONGODB_URI` | `mongodb://localhost:27017` | No auth — local development only |
+
+> **Not yet wired up.** The Go code has no MongoDB driver; `MONGODB_URI` is
+> loaded and ready for when the connection lands.
 
 ### Local overrides
 
