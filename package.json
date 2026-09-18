@@ -1,0 +1,8 @@
+{
+  "name": "moozo-backend-tools",
+  "private": true,
+  "description": "Build-time tooling only; the backend itself is Go. redocly bundles the OpenAPI spec for ogen (see internal/api/generate.go).",
+  "devDependencies": {
+    "@redocly/cli": "2.53.1"
+  }
+}

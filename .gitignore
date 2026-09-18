@@ -1,0 +1,14 @@
+# IDE
+.idea/
+
+# Generated
+internal/api/generated/
+internal/api/bundled/
+
+# Secrets
+.env
+# Local compose overrides
+compose.override.yaml
+
+# Node build tooling
+node_modules/

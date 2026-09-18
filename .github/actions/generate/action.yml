@@ -1,0 +1,22 @@
+name: Generate API code
+description: >
+  Bundles the OpenAPI spec with redocly and regenerates the ogen server.
+  internal/api/{generated,bundled} are git-ignored, so this must run before
+  anything compiles. Assumes Go is already set up by the calling job.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: "22"
+        cache: npm
+
+    # redocly is pinned in package.json / package-lock.json.
+    - name: Install redocly
+      shell: bash
+      run: npm ci --no-fund --no-audit
+
+    - name: Generate
+      shell: bash
+      run: go generate ./...
