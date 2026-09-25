@@ -6,24 +6,20 @@ import (
 	"github.com/ogen-go/ogen/ogenerrors"
 	"go.uber.org/zap"
 
-	"moozo/internal/api/generated"
+	"moozo/internal/api/openapi/generated"
+	"moozo/internal/app"
 )
 
 type Handler struct {
 	logger     *zap.Logger
 	production bool
+	app        app.Application
 }
 
 var _ generated.Handler = (*Handler)(nil)
 
-func NewHandler(logger *zap.Logger, production bool) *Handler {
-	return &Handler{logger: logger, production: production}
-}
-
-func (h *Handler) Hello(ctx context.Context) (*generated.HelloOK, error) {
-	return &generated.HelloOK{
-		Message: "Hello, World!",
-	}, nil
+func NewHandler(logger *zap.Logger, production bool, application app.Application) *Handler {
+	return &Handler{logger: logger, production: production, app: application}
 }
 
 // NewError shapes handler errors into the spec's default response.

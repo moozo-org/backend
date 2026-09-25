@@ -9,8 +9,8 @@ WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci --no-fund --no-audit
 
-COPY internal/api/ ./internal/api/
-WORKDIR /src/internal/api
+COPY internal/api/openapi/ ./internal/api/openapi/
+WORKDIR /src/internal/api/openapi
 RUN npx --no-install redocly bundle server.yaml -o /out/server.yaml
 
 # --- build stage -------------------------------------------------------------
@@ -24,13 +24,13 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
 
-# internal/api/{bundled,generated} are git-ignored and excluded via
+# internal/api/openapi/{bundled,generated} are git-ignored and excluded via
 # .dockerignore, so this always builds from the spec rather than whatever
 # happens to be on the host.
-COPY --from=spec /out/server.yaml internal/api/bundled/server.yaml
+COPY --from=spec /out/server.yaml internal/api/openapi/bundled/server.yaml
 
 # The spec is already bundled above, so only the ogen directive runs here. Its
-# flags still live in internal/api/generate.go, the single source of truth.
+# flags still live in internal/api/openapi/generate.go, the single source of truth.
 RUN --mount=type=cache,target=/go/pkg/mod go generate -run 'go tool ogen' ./...
 
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
