@@ -9,7 +9,9 @@
 //	  "validationAction": "error",   // optional, default error
 //	  "indexes": [
 //	    { "key": { "email": 1 }, "name": "email_unique", "unique": true,
-//	      "collation": { "locale": "en", "strength": 2 } }  // optional
+//	      "collation": { "locale": "en", "strength": 2 } },  // optional
+//	    { "key": { "expires_at": 1 }, "name": "expires_at_ttl",
+//	      "expireAfterSeconds": 0 }                          // optional, TTL
 //	  ]
 //	}
 //
@@ -56,6 +58,9 @@ type Index struct {
 	Name      string     `bson:"name"`
 	Unique    bool       `bson:"unique"`
 	Collation *Collation `bson:"collation"`
+	// ExpireAfterSeconds makes a TTL index: MongoDB deletes a document once
+	// the indexed date is this many seconds in the past.
+	ExpireAfterSeconds *int32 `bson:"expireAfterSeconds"`
 }
 
 // Collation makes string comparisons locale-aware; strength 2 ignores case,
@@ -69,6 +74,9 @@ func (idx Index) model() mongo.IndexModel {
 	opts := options.Index().SetName(idx.Name).SetUnique(idx.Unique)
 	if idx.Collation != nil {
 		opts.SetCollation(&options.Collation{Locale: idx.Collation.Locale, Strength: idx.Collation.Strength})
+	}
+	if idx.ExpireAfterSeconds != nil {
+		opts.SetExpireAfterSeconds(*idx.ExpireAfterSeconds)
 	}
 	return mongo.IndexModel{Keys: idx.Key, Options: opts}
 }

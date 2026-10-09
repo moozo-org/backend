@@ -1,7 +1,6 @@
 package command
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -11,29 +10,20 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"moozo/moozo"
+	"moozo/moozo/moozotest"
 )
 
-type fakeUserRepository struct {
-	registered []*moozo.User
-	err        error
-}
-
-func (f *fakeUserRepository) Register(_ context.Context, u *moozo.User) error {
-	if f.err != nil {
-		return f.err
-	}
-	f.registered = append(f.registered, u)
-	return nil
-}
+var errBoom = errors.New("boom")
 
 // synctestEpoch is where time.Now starts inside a synctest bubble.
 var synctestEpoch = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func TestRegisterUser(t *testing.T) {
 	cases := map[string]struct {
-		cmd     RegisterUser
-		repoErr error
-		wantErr error
+		cmd      RegisterUser
+		existing []*moozo.User // registered before cmd runs
+		repoErr  error
+		wantErr  error
 	}{
 		"planner":  {cmd: RegisterUser{Email: "jane@example.com", Password: "correct horse", Role: moozo.RolePlanner}},
 		"provider": {cmd: RegisterUser{Email: "jane@example.com", Password: "correct horse", Role: moozo.RoleProvider}},
@@ -58,23 +48,34 @@ func TestRegisterUser(t *testing.T) {
 			wantErr: ErrPasswordTooLong,
 		},
 		"email taken": {
+			cmd:      RegisterUser{Email: "Jane@example.com", Password: "password123", Role: moozo.RolePlanner},
+			existing: []*moozo.User{{Email: "jane@example.com"}},
+			wantErr:  moozo.ErrEmailTaken,
+		},
+		"repository failure": {
 			cmd:     RegisterUser{Email: "jane@example.com", Password: "password123", Role: moozo.RolePlanner},
-			repoErr: moozo.ErrEmailTaken,
-			wantErr: moozo.ErrEmailTaken,
+			repoErr: errBoom,
+			wantErr: errBoom,
 		},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				repo := &fakeUserRepository{err: tc.repoErr}
+				repo := &moozotest.Repository{}
+				for _, u := range tc.existing {
+					if err := repo.Register(t.Context(), u); err != nil {
+						t.Fatal(err)
+					}
+				}
+				repo.Err = tc.repoErr
 
 				u, err := NewRegisterUserHandler(repo).Execute(t.Context(), tc.cmd)
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("Execute() error = %v, want %v", err, tc.wantErr)
 				}
 				if tc.wantErr != nil {
-					if len(repo.registered) != 0 {
+					if len(repo.Users()) != len(tc.existing) {
 						t.Error("rejected user was registered")
 					}
 					return
@@ -87,7 +88,7 @@ func TestRegisterUser(t *testing.T) {
 }
 
 // assertRegistered checks the user Execute built from cmd and handed to repo.
-func assertRegistered(t *testing.T, cmd RegisterUser, u *moozo.User, repo *fakeUserRepository) {
+func assertRegistered(t *testing.T, cmd RegisterUser, u *moozo.User, repo *moozotest.Repository) {
 	t.Helper()
 
 	if want := strings.ToLower(strings.TrimSpace(cmd.Email)); u.Email != want {
@@ -105,7 +106,7 @@ func assertRegistered(t *testing.T, cmd RegisterUser, u *moozo.User, repo *fakeU
 	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(cmd.Password)); err != nil {
 		t.Errorf("hash does not match password: %v", err)
 	}
-	if len(repo.registered) != 1 || repo.registered[0] != u {
-		t.Errorf("repository got %v, want the returned user", repo.registered)
+	if users := repo.Users(); len(users) != 1 || users[0] != u {
+		t.Errorf("repository got %v, want the returned user", users)
 	}
 }

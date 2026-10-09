@@ -1,0 +1,15 @@
+type: object
+required:
+  - email
+  - password
+properties:
+  email:
+    type: string
+    format: email
+    maxLength: 254
+    example: jane@example.com
+  password:
+    type: string
+    format: password
+    # No minLength: login must not reveal the password policy.
+    maxLength: 72

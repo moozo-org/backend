@@ -65,9 +65,9 @@ func run(cfg Config, logger *zap.Logger) error {
 		return err
 	}
 
-	handler := api.NewHandler(logger, cfg.Production, app.New(repo))
+	handler := api.NewHandler(logger, cfg.Production, app.New(repo, repo))
 
-	srv, err := generated.NewServer(handler,
+	srv, err := generated.NewServer(handler, handler,
 		generated.WithErrorHandler(api.ErrorHandler(logger, cfg.Production)),
 		generated.WithMiddleware(middleware.LoggingMiddleware(logger)),
 	)
