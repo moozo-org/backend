@@ -1,0 +1,14 @@
+type: object
+required:
+  - token
+  - expires_at
+  - user
+properties:
+  token:
+    type: string
+    description: Opaque bearer token. Store it securely; it cannot be retrieved again.
+  expires_at:
+    type: string
+    format: date-time
+  user:
+    $ref: ./User.yaml

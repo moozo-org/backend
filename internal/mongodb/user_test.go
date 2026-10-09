@@ -90,3 +90,33 @@ func TestRegister(t *testing.T) {
 		})
 	}
 }
+
+func TestFindUserByEmail(t *testing.T) {
+	cases := map[string]struct {
+		email   string
+		wantErr error
+	}{
+		"exact email":      {email: "jane@example.com"},
+		"different case":   {email: "JANE@Example.com"},
+		"unknown email":    {email: "eve@example.com", wantErr: moozo.ErrUserNotFound},
+		"prefix not match": {email: "jane@example", wantErr: moozo.ErrUserNotFound},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo := newRepository(t)
+			jane := newUser("jane@example.com", moozo.RolePlanner)
+			if err := repo.Register(t.Context(), jane); err != nil {
+				t.Fatal(err)
+			}
+
+			got, err := repo.FindUserByEmail(t.Context(), tc.email)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("FindUserByEmail() error = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr == nil && *got != *jane {
+				t.Errorf("found %+v, want %+v", *got, *jane)
+			}
+		})
+	}
+}

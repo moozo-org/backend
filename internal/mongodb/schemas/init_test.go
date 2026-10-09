@@ -96,6 +96,9 @@ func assertIndexes(t *testing.T, coll *mongo.Collection, want []schemas.Index) {
 			w.Collation != nil && (g.Collation.Locale != w.Collation.Locale || g.Collation.Strength != w.Collation.Strength) {
 			t.Errorf("%s: index %q collation = %+v, want %+v", coll.Name(), w.Name, g.Collation, w.Collation)
 		}
+		if !equalPtr(g.ExpireAfterSeconds, w.ExpireAfterSeconds) {
+			t.Errorf("%s: index %q expireAfterSeconds = %v, want %v", coll.Name(), w.Name, g.ExpireAfterSeconds, w.ExpireAfterSeconds)
+		}
 	}
 }
 
@@ -153,4 +156,8 @@ func TestInit(t *testing.T) {
 			assertApplied(t, db)
 		})
 	}
+}
+
+func equalPtr[T comparable](a, b *T) bool {
+	return a == nil && b == nil || a != nil && b != nil && *a == *b
 }

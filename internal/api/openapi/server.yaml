@@ -5,3 +5,13 @@ info:
 paths:
   /auth/register:
     $ref: "paths/auth_register.yaml"
+  /auth/login:
+    $ref: "paths/auth_login.yaml"
+  /auth/logout:
+    $ref: "paths/auth_logout.yaml"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Session token from POST /auth/login.

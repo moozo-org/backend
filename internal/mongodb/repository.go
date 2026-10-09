@@ -10,7 +10,8 @@ import (
 
 // Repository is the MongoDB implementation of the domain repositories.
 type Repository struct {
-	users *mongo.Collection
+	users    *mongo.Collection
+	sessions *mongo.Collection
 }
 
 // NewRepository applies every collection schema before returning, so a
@@ -20,6 +21,7 @@ func NewRepository(ctx context.Context, db *mongo.Database) (*Repository, error)
 		return nil, err
 	}
 	return &Repository{
-		users: db.Collection(UsersCollectionName),
+		users:    db.Collection(UsersCollectionName),
+		sessions: db.Collection(SessionsCollectionName),
 	}, nil
 }
