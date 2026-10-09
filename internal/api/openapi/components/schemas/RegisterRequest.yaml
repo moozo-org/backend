@@ -1,0 +1,19 @@
+type: object
+required:
+  - email
+  - password
+  - role
+properties:
+  email:
+    type: string
+    format: email
+    maxLength: 254
+    example: jane@example.com
+  password:
+    type: string
+    format: password
+    minLength: 8
+    maxLength: 72
+    description: At most 72 bytes once UTF-8 encoded (bcrypt limit).
+  role:
+    $ref: ./RegisterRole.yaml

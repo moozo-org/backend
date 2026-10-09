@@ -6,6 +6,8 @@ import (
 	"runtime/debug"
 
 	"go.uber.org/zap"
+
+	"moozo/internal/api/middleware"
 )
 
 // trackingWriter records whether the response has started, so writeError can
@@ -47,7 +49,7 @@ func Recover(logger *zap.Logger, production bool, next http.Handler) http.Handle
 				panic(rec)
 			}
 
-			withTrace(r.Context(), logger).Error("panic recovered",
+			middleware.WithTrace(r.Context(), logger).Error("panic recovered",
 				zap.Any("panic", rec),
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),

@@ -1,0 +1,5 @@
+type: string
+description: Roles open to self-service sign-up. Admin is deliberately absent.
+enum:
+  - planner
+  - provider

@@ -34,6 +34,19 @@ jobs:
     # Drop this line to run the two jobs in parallel instead.
     needs: lint
     runs-on: ubuntu-latest
+    services:
+      # Integration tests in internal/mongodb each use a throwaway database here.
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MONGODB_TEST_URI: mongodb://localhost:27017
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -56,7 +69,7 @@ jobs:
       # ogen output would otherwise dominate the percentage and hide the
       # coverage of hand-written code.
       - name: Drop generated code from coverage
-        run: grep -v '^moozo/internal/api/generated/' coverage.out > coverage.filtered.out
+        run: grep -v '^moozo/internal/api/openapi/generated/' coverage.out > coverage.filtered.out
 
       - name: Coverage report
         run: |

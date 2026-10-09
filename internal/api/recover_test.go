@@ -17,7 +17,7 @@ func TestRecoverHidesPanicFromClient(t *testing.T) {
 	}))
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/hello", nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/auth/register", nil))
 
 	body, _ := io.ReadAll(rec.Result().Body)
 	if strings.Contains(string(body), "mongodb") {
@@ -70,7 +70,7 @@ func TestRecoverAbortsAfterPartialWrite(t *testing.T) {
 				t.Errorf("recovered %v, want ErrAbortHandler", r)
 			}
 		}()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/hello", nil))
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/auth/register", nil))
 	}()
 
 	body, _ := io.ReadAll(rec.Result().Body)

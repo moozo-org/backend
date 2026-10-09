@@ -1,7 +1,7 @@
 name: Generate API code
 description: >
   Bundles the OpenAPI spec with redocly and regenerates the ogen server.
-  internal/api/{generated,bundled} are git-ignored, so this must run before
+  internal/api/openapi/{generated,bundled} are git-ignored, so this must run before
   anything compiles. Assumes Go is already set up by the calling job.
 
 runs:
