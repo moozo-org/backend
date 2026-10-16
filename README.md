@@ -34,6 +34,7 @@ Brings up the API on `:8080` and MongoDB on `:27017`.
 cmd/
   main.go            entrypoint; mounts the ogen server and the docs routes
   Dockerfile         multi-stage build (generates the spec, then compiles)
+  seed/              creates test users for every role in a local database
 internal/api/
   handler.go         hand-written handlers implementing the ogen interface
   doc.go             Swagger UI and spec-serving handlers (outside ogen)
@@ -130,7 +131,8 @@ role enums vs `moozo.Roles` / `moozo.SelfServiceRoles`).
 `POST /auth/register` only accepts `planner` and `provider`: the spec's
 `RegisterRole` enum leaves out `admin`, so ogen rejects it with a 400 before the
 handler runs, and the register command checks again against `moozo.SelfServiceRoles`.
-Admins must be created some other way. A taken email returns 409.
+Admins must be created some other way — locally, `go run ./cmd/seed` (see
+[Seeding test users](#seeding-test-users)). A taken email returns 409.
 
 ## Sessions
 
@@ -208,6 +210,32 @@ including the compose one:
 ```sh
 docker compose up -d mongo
 MONGODB_TEST_URI=mongodb://localhost:27017 go test ./...
+```
+
+### Seeding test users
+
+`cmd/seed` creates three accounts per role, admins included, through
+`command.CreateUser` (the role-unrestricted core of `RegisterUser`). It reads
+`MONGODB_URI` and `MONGODB_DATABASE` like the server, refuses to run when
+`PRODUCTION=true`, and skips accounts that already exist, so it is safe to
+rerun:
+
+```sh
+docker compose up -d mongo
+go run ./cmd/seed
+```
+
+Every seeded account has the password **`password123`** — local testing only.
+
+| Role | Emails |
+|---|---|
+| `planner` | `planner1@moozo.test`, `planner2@moozo.test`, `planner3@moozo.test` |
+| `provider` | `provider1@moozo.test`, `provider2@moozo.test`, `provider3@moozo.test` |
+| `admin` | `admin1@moozo.test`, `admin2@moozo.test`, `admin3@moozo.test` |
+
+```sh
+curl -s localhost:8080/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"admin1@moozo.test","password":"password123"}'
 ```
 
 Linting locally, matching CI:

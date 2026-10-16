@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,8 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -52,7 +49,7 @@ func main() {
 }
 
 func run(cfg Config, logger *zap.Logger) error {
-	db, disconnect, err := connectMongo(cfg)
+	db, disconnect, err := mongodb.Connect(cfg.MongoURI, cfg.MongoDatabase)
 	if err != nil {
 		return err
 	}
@@ -116,28 +113,6 @@ func run(cfg Config, logger *zap.Logger) error {
 	defer cancel()
 
 	return httpSrv.Shutdown(shutdownCtx)
-}
-
-func connectMongo(cfg Config) (*mongo.Database, func(), error) {
-	client, err := mongo.Connect(options.Client().ApplyURI(cfg.MongoURI))
-	if err != nil {
-		return nil, nil, fmt.Errorf("connect to mongo: %w", err)
-	}
-	disconnect := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), mongoTimeout)
-		defer cancel()
-		_ = client.Disconnect(ctx)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), mongoTimeout)
-	defer cancel()
-
-	if err := client.Ping(ctx, nil); err != nil {
-		disconnect()
-		return nil, nil, fmt.Errorf("ping mongo: %w", err)
-	}
-
-	return client.Database(cfg.MongoDatabase), disconnect, nil
 }
 
 type Config struct {
