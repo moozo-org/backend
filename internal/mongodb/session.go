@@ -35,7 +35,7 @@ func tokenHashID(h moozo.SessionTokenHash) bson.Binary {
 func newSessionDocument(s *moozo.Session) sessionDocument {
 	return sessionDocument{
 		TokenHash: tokenHashID(s.TokenHash),
-		UserID:    bson.Binary{Subtype: bson.TypeBinaryUUID, Data: s.UserID[:]},
+		UserID:    uuidID(s.UserID),
 		Role:      string(s.Role),
 		CreatedAt: s.CreatedAt,
 		ExpiresAt: s.ExpiresAt,

@@ -28,12 +28,27 @@ func (r Role) IsSelfService() bool {
 	return slices.Contains(SelfServiceRoles, r)
 }
 
+// Status tracks whether a user proved they own their email.
+type Status string
+
+const (
+	// StatusPending is a self-registered user who has not verified their
+	// email yet; they cannot log in.
+	StatusPending Status = "pending"
+	StatusActive  Status = "active"
+)
+
+// Statuses lists every status a stored user may have, in the order the
+// collection validator declares them.
+var Statuses = []Status{StatusPending, StatusActive}
+
 // User is storage-agnostic: persistence formats live with their repository.
 type User struct {
 	ID           uuid.UUID
 	Email        string
 	PasswordHash string
 	Role         Role
+	Status       Status
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -49,4 +64,7 @@ type UserRepository interface {
 	// FindUserByEmail matches email case-insensitively and returns
 	// ErrUserNotFound when there is no such account.
 	FindUserByEmail(ctx context.Context, email string) (*User, error)
+	// ActivateUser sets the user's status to active and UpdatedAt to at. It
+	// returns ErrUserNotFound when there is no such account.
+	ActivateUser(ctx context.Context, id uuid.UUID, at time.Time) error
 }

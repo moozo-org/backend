@@ -1,0 +1,14 @@
+type: object
+required:
+  - email
+  - code
+properties:
+  email:
+    type: string
+    format: email
+    maxLength: 254
+    example: jane@example.com
+  code:
+    type: string
+    pattern: '^[0-9]{6}$'
+    example: '042917'

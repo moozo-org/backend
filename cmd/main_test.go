@@ -1,17 +1,22 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"moozo/internal/config"
+	"moozo/internal/mail"
 
 	"github.com/stretchr/testify/require"
 )
 
 // t.Setenv registers the restore; os.Unsetenv does the actual clearing.
 func clearEnv(t *testing.T) {
-	for _, k := range []string{"PORT", "PRODUCTION", "ENV_PRODUCTION", "MONGODB_URI", "MONGODB_DATABASE"} {
+	for _, k := range []string{"PORT", "PRODUCTION", "ENV_PRODUCTION", "MONGODB_URI", "MONGODB_DATABASE",
+		"BREVO_API_KEY", "MAIL_FROM_EMAIL", "MAIL_FROM_NAME"} {
 		t.Setenv(k, "")
 		err := os.Unsetenv(k)
 		require.NoError(t, err)
@@ -76,5 +81,36 @@ func TestProductionIsThePrimaryKey(t *testing.T) {
 	cfg, _ = config.Load[Config]()
 	if !cfg.Production {
 		t.Error("PRODUCTION must set Production")
+	}
+}
+
+func TestNewMailer(t *testing.T) {
+	cases := map[string]struct {
+		cfg     Config
+		want    string // the mailer's type
+		wantErr bool
+	}{
+		"development without key": {want: "mail.Log"},
+		"brevo": {
+			cfg:  Config{BrevoAPIKey: "key", MailFromEmail: "noreply@moozo.test"},
+			want: fmt.Sprintf("%T", &mail.Brevo{}),
+		},
+		"brevo without sender": {cfg: Config{BrevoAPIKey: "key"}, wantErr: true},
+		"production without key": {
+			cfg:     Config{Environment: config.Environment{Production: true}},
+			wantErr: true,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			got, err := newMailer(tc.cfg, zap.NewNop())
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("newMailer() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if !tc.wantErr && fmt.Sprintf("%T", got) != tc.want {
+				t.Errorf("newMailer() = %T, want %s", got, tc.want)
+			}
+		})
 	}
 }

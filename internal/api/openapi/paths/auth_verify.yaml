@@ -1,0 +1,21 @@
+post:
+  operationId: verifyEmail
+  summary: Verify an account's email
+  description: >
+    Activates a pending account with the six-digit code emailed at sign-up or
+    by POST /auth/resend-verification. Codes expire after 15 minutes and allow
+    5 attempts; after that, request a new one. Verifying an account that is
+    already active succeeds.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/VerifyEmailRequest.yaml
+  responses:
+    '204':
+      description: Account active
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    default:
+      $ref: ../components/responses/Error.yaml

@@ -26,8 +26,13 @@ import (
 // security run too.
 func newTestServer(t *testing.T, repo *moozotest.Repository) *generated.Server {
 	t.Helper()
+	return newTestServerWithMailer(t, repo, &moozotest.Mailer{})
+}
+
+func newTestServerWithMailer(t *testing.T, repo *moozotest.Repository, mailer *moozotest.Mailer) *generated.Server {
+	t.Helper()
 	logger, _ := observed()
-	h := NewHandler(logger, false, app.New(repo, repo))
+	h := NewHandler(logger, false, app.New(repo, repo, repo, mailer))
 	srv, err := generated.NewServer(h, h, generated.WithErrorHandler(ErrorHandler(logger, false)))
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
@@ -35,15 +40,21 @@ func newTestServer(t *testing.T, repo *moozotest.Repository) *generated.Server {
 	return srv
 }
 
-// withUser returns a repository holding one planner with email and password.
+// withUser returns a repository holding one active planner with email and
+// password.
 func withUser(t *testing.T, email, password string) *moozotest.Repository {
+	t.Helper()
+	return withUserStatus(t, email, password, moozo.StatusActive)
+}
+
+func withUserStatus(t *testing.T, email, password string, status moozo.Status) *moozotest.Repository {
 	t.Helper()
 	repo := &moozotest.Repository{}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
 	}
-	u := &moozo.User{ID: uuid.Must(uuid.NewV7()), Email: email, PasswordHash: string(hash), Role: moozo.RolePlanner}
+	u := &moozo.User{ID: uuid.Must(uuid.NewV7()), Email: email, PasswordHash: string(hash), Role: moozo.RolePlanner, Status: status}
 	if err := repo.Register(t.Context(), u); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +63,7 @@ func withUser(t *testing.T, email, password string) *moozotest.Repository {
 
 func newRegisterHandler(repo *moozotest.Repository) *Handler {
 	logger, _ := observed()
-	return NewHandler(logger, false, app.New(repo, repo))
+	return NewHandler(logger, false, app.New(repo, repo, repo, &moozotest.Mailer{}))
 }
 
 func TestRegisterReturnsCreatedUser(t *testing.T) {
@@ -75,7 +86,8 @@ func TestRegisterReturnsCreatedUser(t *testing.T) {
 		t.Fatalf("registered %d users, want 1", len(users))
 	}
 	stored := users[0]
-	if got.ID != stored.ID || got.Email != stored.Email || string(got.Role) != string(stored.Role) {
+	if got.ID != stored.ID || got.Email != stored.Email || string(got.Role) != string(stored.Role) ||
+		got.Status != generated.UserStatusPending {
 		t.Errorf("response %+v does not match stored user %+v", got, stored)
 	}
 }
@@ -118,6 +130,28 @@ func TestRegisterMapsErrors(t *testing.T) {
 				t.Fatalf("response = %s, want %s", gotType, wantType)
 			}
 		})
+	}
+}
+
+// The account exists, so the response is the same 201 as a sent email.
+func TestRegisterMailFailure(t *testing.T) {
+	repo := &moozotest.Repository{}
+	logger, logs := observed()
+	h := NewHandler(logger, false, app.New(repo, repo, repo, &moozotest.Mailer{Err: errors.New("boom")}))
+
+	res, err := h.Register(t.Context(), &generated.RegisterRequest{
+		Email:    "jane@example.com",
+		Password: "password123",
+		Role:     generated.RegisterRolePlanner,
+	})
+	if err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if _, ok := res.(*generated.User); !ok {
+		t.Fatalf("response = %T, want *generated.User", res)
+	}
+	if logs.FilterMessage("registered user without verification email").Len() != 1 {
+		t.Error("mail failure not logged")
 	}
 }
 
@@ -178,24 +212,25 @@ func TestRegisterHTTP(t *testing.T) {
 	}
 }
 
-// The spec's enums are a second copy of the domain's roles; the command would
-// still reject a drifted role, but the published API would advertise it.
-func TestSpecRolesMatchDomain(t *testing.T) {
+// The spec's enums are a second copy of the domain's roles and statuses; the
+// command would still reject a drifted role, but the published API would
+// advertise it.
+func TestSpecEnumsMatchDomain(t *testing.T) {
 	cases := map[string]struct {
 		spec   []string
-		domain []moozo.Role
+		domain []string
 	}{
-		"RegisterRole": {spec: enumValues(generated.RegisterRole("").AllValues()), domain: moozo.SelfServiceRoles},
-		"Role":         {spec: enumValues(generated.Role("").AllValues()), domain: moozo.Roles},
+		"RegisterRole": {spec: enumValues(generated.RegisterRole("").AllValues()), domain: enumValues(moozo.SelfServiceRoles)},
+		"Role":         {spec: enumValues(generated.Role("").AllValues()), domain: enumValues(moozo.Roles)},
+		"UserStatus":   {spec: enumValues(generated.UserStatus("").AllValues()), domain: enumValues(moozo.Statuses)},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			domain := enumValues(tc.domain)
 			slices.Sort(tc.spec)
-			slices.Sort(domain)
-			if !slices.Equal(tc.spec, domain) {
-				t.Errorf("spec %s = %v, domain = %v", name, tc.spec, domain)
+			slices.Sort(tc.domain)
+			if !slices.Equal(tc.spec, tc.domain) {
+				t.Errorf("spec %s = %v, domain = %v", name, tc.spec, tc.domain)
 			}
 		})
 	}
@@ -227,15 +262,21 @@ const janeLogin = `{"email":"jane@example.com","password":"correct horse"}`
 
 func TestLoginHTTP(t *testing.T) {
 	cases := map[string]struct {
-		body string
-		want int
+		status moozo.Status // jane's; active when empty
+		body   string
+		want   int
 	}{
 		"valid credentials": {body: janeLogin, want: http.StatusOK},
 		"email in another case": {
 			body: `{"email":"JANE@example.com","password":"correct horse"}`,
 			want: http.StatusOK,
 		},
-		"wrong password":   {body: `{"email":"jane@example.com","password":"wrong horse"}`, want: http.StatusUnauthorized},
+		"wrong password": {body: `{"email":"jane@example.com","password":"wrong horse"}`, want: http.StatusUnauthorized},
+		"email not verified": {
+			status: moozo.StatusPending,
+			body:   janeLogin,
+			want:   http.StatusForbidden,
+		},
 		"unknown email":    {body: `{"email":"eve@example.com","password":"correct horse"}`, want: http.StatusUnauthorized},
 		"missing password": {body: `{"email":"jane@example.com"}`, want: http.StatusBadRequest},
 		"invalid email":    {body: `{"email":"jane","password":"correct horse"}`, want: http.StatusBadRequest},
@@ -243,7 +284,11 @@ func TestLoginHTTP(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			srv := newTestServer(t, withUser(t, "jane@example.com", "correct horse"))
+			status := tc.status
+			if status == "" {
+				status = moozo.StatusActive
+			}
+			srv := newTestServer(t, withUserStatus(t, "jane@example.com", "correct horse", status))
 
 			rec := serve(t, srv, "/auth/login", tc.body, "")
 			if rec.Code != tc.want {
@@ -305,6 +350,86 @@ func TestLogoutHTTP(t *testing.T) {
 			// The token is revoked: using it again is rejected.
 			if rec := serve(t, srv, "/auth/logout", "", valid); rec.Code != http.StatusUnauthorized {
 				t.Errorf("reused token: status = %d, want 401", rec.Code)
+			}
+		})
+	}
+}
+
+const janeRegister = `{"email":"jane@example.com","password":"correct horse","role":"planner"}`
+
+// Sign-up to login, through the API.
+func TestVerifyEmailFlowHTTP(t *testing.T) {
+	repo := &moozotest.Repository{}
+	mailer := &moozotest.Mailer{}
+	srv := newTestServerWithMailer(t, repo, mailer)
+
+	if rec := serve(t, srv, "/auth/register", janeRegister, ""); rec.Code != http.StatusCreated {
+		t.Fatalf("register: status = %d; body = %s", rec.Code, rec.Body)
+	}
+	if rec := serve(t, srv, "/auth/login", janeLogin, ""); rec.Code != http.StatusForbidden {
+		t.Fatalf("login before verifying: status = %d, want 403", rec.Code)
+	}
+
+	sent := mailer.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d codes, want 1", len(sent))
+	}
+	verify := fmt.Sprintf(`{"email":"jane@example.com","code":%q}`, sent[0].Code)
+	if rec := serve(t, srv, "/auth/verify", verify, ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("verify: status = %d; body = %s", rec.Code, rec.Body)
+	}
+	login(t, srv)
+}
+
+func TestVerifyEmailHTTP(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want int
+	}{
+		"wrong code":    {body: `{"email":"jane@example.com","code":"123456"}`, want: http.StatusBadRequest},
+		"unknown email": {body: `{"email":"eve@example.com","code":"123456"}`, want: http.StatusBadRequest},
+		"short code":    {body: `{"email":"jane@example.com","code":"12345"}`, want: http.StatusBadRequest},
+		"letters":       {body: `{"email":"jane@example.com","code":"12345a"}`, want: http.StatusBadRequest},
+		"missing code":  {body: `{"email":"jane@example.com"}`, want: http.StatusBadRequest},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			// No code was sent, so no code can be right.
+			srv := newTestServer(t, withUserStatus(t, "jane@example.com", "correct horse", moozo.StatusPending))
+
+			if rec := serve(t, srv, "/auth/verify", tc.body, ""); rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tc.want, rec.Body)
+			}
+		})
+	}
+}
+
+func TestResendVerificationHTTP(t *testing.T) {
+	cases := map[string]struct {
+		body     string
+		repoErr  error
+		want     int
+		wantSent int
+	}{
+		"pending account": {body: `{"email":"jane@example.com"}`, want: http.StatusAccepted, wantSent: 1},
+		"unknown email":   {body: `{"email":"eve@example.com"}`, want: http.StatusAccepted},
+		"invalid email":   {body: `{"email":"jane"}`, want: http.StatusBadRequest},
+		"database outage": {body: `{"email":"jane@example.com"}`, repoErr: errors.New("boom"), want: http.StatusInternalServerError},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo := withUserStatus(t, "jane@example.com", "correct horse", moozo.StatusPending)
+			repo.Err = tc.repoErr
+			mailer := &moozotest.Mailer{}
+			srv := newTestServerWithMailer(t, repo, mailer)
+
+			if rec := serve(t, srv, "/auth/resend-verification", tc.body, ""); rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tc.want, rec.Body)
+			}
+			if got := len(mailer.Sent()); got != tc.wantSent {
+				t.Errorf("sent %d codes, want %d", got, tc.wantSent)
 			}
 		})
 	}

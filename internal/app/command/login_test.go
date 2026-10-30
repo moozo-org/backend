@@ -15,15 +15,20 @@ import (
 
 const janePassword = "correct horse"
 
-// newJane registers jane@example.com with janePassword. MinCost keeps the
-// test fast; Login reads the cost from the hash.
+// newJane registers an active jane@example.com with janePassword. MinCost
+// keeps the test fast; Login reads the cost from the hash.
 func newJane(t *testing.T, repo *moozotest.Repository) *moozo.User {
+	t.Helper()
+	return newJaneWithStatus(t, repo, moozo.StatusActive)
+}
+
+func newJaneWithStatus(t *testing.T, repo *moozotest.Repository, status moozo.Status) *moozo.User {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte(janePassword), bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
 	}
-	u := &moozo.User{ID: uuid.Must(uuid.NewV7()), Email: "jane@example.com", PasswordHash: string(hash), Role: moozo.RolePlanner}
+	u := &moozo.User{ID: uuid.Must(uuid.NewV7()), Email: "jane@example.com", PasswordHash: string(hash), Role: moozo.RolePlanner, Status: status}
 	if err := repo.Register(t.Context(), u); err != nil {
 		t.Fatal(err)
 	}
@@ -33,6 +38,7 @@ func newJane(t *testing.T, repo *moozotest.Repository) *moozo.User {
 func TestLogin(t *testing.T) {
 	cases := map[string]struct {
 		cmd     Login
+		status  moozo.Status // jane's; active when empty
 		repoErr error
 		wantErr error
 	}{
@@ -52,6 +58,18 @@ func TestLogin(t *testing.T) {
 			cmd:     Login{Email: "jane@example.com", Password: strings.Repeat("é", 40)},
 			wantErr: ErrInvalidCredentials,
 		},
+		"email not verified": {
+			cmd:     Login{Email: "jane@example.com", Password: janePassword},
+			status:  moozo.StatusPending,
+			wantErr: ErrEmailNotVerified,
+		},
+		// The password is checked first, so the status is not revealed to
+		// someone who does not know it.
+		"email not verified, wrong password": {
+			cmd:     Login{Email: "jane@example.com", Password: "wrong horse"},
+			status:  moozo.StatusPending,
+			wantErr: ErrInvalidCredentials,
+		},
 		"repository failure": {
 			cmd:     Login{Email: "jane@example.com", Password: janePassword},
 			repoErr: errBoom,
@@ -63,7 +81,11 @@ func TestLogin(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				repo := &moozotest.Repository{}
-				jane := newJane(t, repo)
+				status := tc.status
+				if status == "" {
+					status = moozo.StatusActive
+				}
+				jane := newJaneWithStatus(t, repo, status)
 				repo.Err = tc.repoErr
 
 				res, err := NewLoginHandler(repo, repo).Execute(t.Context(), tc.cmd)

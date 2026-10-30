@@ -11,6 +11,9 @@ services:
       PORT: 8080
       PRODUCTION: "false"
       MONGODB_URI: mongodb://mongo:27017
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      MAIL_FROM_EMAIL: ${MAIL_FROM_EMAIL:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Moozo}
     depends_on:
       mongo:
         condition: service_healthy

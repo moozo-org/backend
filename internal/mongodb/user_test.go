@@ -24,6 +24,7 @@ func newUser(email string, role moozo.Role) *moozo.User {
 		Email:        email,
 		PasswordHash: "$2a$10$hash",
 		Role:         role,
+		Status:       moozo.StatusPending,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -118,5 +119,31 @@ func TestFindUserByEmail(t *testing.T) {
 				t.Errorf("found %+v, want %+v", *got, *jane)
 			}
 		})
+	}
+}
+
+func TestActivateUser(t *testing.T) {
+	repo := newRepository(t)
+	jane := newUser("jane@example.com", moozo.RolePlanner)
+	if err := repo.Register(t.Context(), jane); err != nil {
+		t.Fatal(err)
+	}
+
+	at := jane.UpdatedAt.Add(time.Minute)
+	if err := repo.ActivateUser(t.Context(), jane.ID, at); err != nil {
+		t.Fatalf("ActivateUser() error = %v", err)
+	}
+	got, err := repo.FindUserByEmail(t.Context(), jane.Email)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := *jane
+	want.Status, want.UpdatedAt = moozo.StatusActive, at
+	if *got != want {
+		t.Errorf("found %+v, want %+v", *got, want)
+	}
+
+	if err := repo.ActivateUser(t.Context(), uuid.Must(uuid.NewV7()), at); !errors.Is(err, moozo.ErrUserNotFound) {
+		t.Errorf("ActivateUser(unknown) error = %v, want %v", err, moozo.ErrUserNotFound)
 	}
 }

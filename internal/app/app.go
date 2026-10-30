@@ -18,18 +18,29 @@ type Commands struct {
 	RegisterUser CommandHandler[command.RegisterUser, *moozo.User]
 	Login        CommandHandler[command.Login, *command.LoginResult]
 	Logout       CommandHandler[command.Logout, struct{}]
+
+	VerifyEmail        CommandHandler[command.VerifyEmail, struct{}]
+	ResendVerification CommandHandler[command.ResendVerification, struct{}]
 }
 
 type Queries struct {
 	Authenticate QueryHandler[query.Authenticate, *moozo.Session]
 }
 
-func New(users moozo.UserRepository, sessions moozo.SessionRepository) Application {
+func New(
+	users moozo.UserRepository,
+	sessions moozo.SessionRepository,
+	codes moozo.VerificationCodeRepository,
+	mailer moozo.Mailer,
+) Application {
 	return Application{
 		Commands: Commands{
-			RegisterUser: command.NewRegisterUserHandler(users),
+			RegisterUser: command.NewRegisterUserHandler(users, codes, mailer),
 			Login:        command.NewLoginHandler(users, sessions),
 			Logout:       command.NewLogoutHandler(sessions),
+
+			VerifyEmail:        command.NewVerifyEmailHandler(users, codes),
+			ResendVerification: command.NewResendVerificationHandler(users, codes, mailer),
 		},
 		Queries: Queries{
 			Authenticate: query.NewAuthenticateHandler(sessions),

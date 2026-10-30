@@ -58,8 +58,9 @@ func bsonFields(typ reflect.Type) []string {
 
 func TestSchemasMatchDocuments(t *testing.T) {
 	cases := map[string]reflect.Type{
-		UsersCollectionName:    reflect.TypeFor[userDocument](),
-		SessionsCollectionName: reflect.TypeFor[sessionDocument](),
+		UsersCollectionName:             reflect.TypeFor[userDocument](),
+		SessionsCollectionName:          reflect.TypeFor[sessionDocument](),
+		VerificationCodesCollectionName: reflect.TypeFor[verificationCodeDocument](),
 	}
 
 	for collection, doc := range cases {
@@ -96,6 +97,19 @@ func TestSchemaRolesMatchDomain(t *testing.T) {
 	}
 }
 
+func TestSchemaStatusesMatchDomain(t *testing.T) {
+	var statuses []string
+	for _, s := range moozo.Statuses {
+		statuses = append(statuses, string(s))
+	}
+	slices.Sort(statuses)
+
+	_, schema := loadSchema(t, UsersCollectionName)
+	if got := slices.Sorted(slices.Values(schema.Properties["status"].Enum)); !slices.Equal(got, statuses) {
+		t.Errorf("status enum = %v, moozo.Statuses = %v", got, statuses)
+	}
+}
+
 func TestUsersSchema(t *testing.T) {
 	coll, _ := loadSchema(t, UsersCollectionName)
 
@@ -109,15 +123,19 @@ func TestUsersSchema(t *testing.T) {
 	}
 }
 
-// Expired sessions are deleted by MongoDB; FindSession's callers still check
-// ExpiresAt because the TTL monitor runs only about once a minute.
-func TestSessionsSchema(t *testing.T) {
-	coll, _ := loadSchema(t, SessionsCollectionName)
+// Expired sessions and verification codes are deleted by MongoDB; callers
+// still check ExpiresAt because the TTL monitor runs only about once a minute.
+func TestExpiringSchemas(t *testing.T) {
+	for _, collection := range []string{SessionsCollectionName, VerificationCodesCollectionName} {
+		t.Run(collection, func(t *testing.T) {
+			coll, _ := loadSchema(t, collection)
 
-	if !slices.ContainsFunc(coll.Indexes, func(idx schemas.Index) bool {
-		return len(idx.Key) == 1 && idx.Key[0].Key == "expires_at" &&
-			idx.ExpireAfterSeconds != nil && *idx.ExpireAfterSeconds == 0
-	}) {
-		t.Errorf("indexes = %+v, want a TTL index on expires_at with expireAfterSeconds 0", coll.Indexes)
+			if !slices.ContainsFunc(coll.Indexes, func(idx schemas.Index) bool {
+				return len(idx.Key) == 1 && idx.Key[0].Key == "expires_at" &&
+					idx.ExpireAfterSeconds != nil && *idx.ExpireAfterSeconds == 0
+			}) {
+				t.Errorf("indexes = %+v, want a TTL index on expires_at with expireAfterSeconds 0", coll.Indexes)
+			}
+		})
 	}
 }

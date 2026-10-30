@@ -37,7 +37,7 @@ func TestNewErrorSecurityFailures(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			logger, logs := observed()
-			h := NewHandler(logger, true, app.New(&moozotest.Repository{}, &moozotest.Repository{}))
+			h := NewHandler(logger, true, app.New(&moozotest.Repository{}, &moozotest.Repository{}, &moozotest.Repository{}, &moozotest.Mailer{}))
 
 			got := h.NewError(t.Context(), tc.err)
 			if got.StatusCode != tc.wantCode {
