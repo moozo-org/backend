@@ -1,0 +1,25 @@
+post:
+  operationId: register
+  summary: Create an account
+  description: >
+    Self-service sign-up. Only the planner and provider roles can be requested
+    here; admin accounts cannot be created through this route.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/RegisterRequest.yaml
+  responses:
+    '201':
+      description: Account created
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/User.yaml
+    '400':
+      $ref: ../components/responses/BadRequest.yaml
+    '409':
+      $ref: ../components/responses/Conflict.yaml
+    default:
+      $ref: ../components/responses/Error.yaml

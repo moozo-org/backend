@@ -7,7 +7,8 @@ import (
 	"github.com/ogen-go/ogen/ogenerrors"
 	"go.uber.org/zap"
 
-	"moozo/internal/api/generated"
+	"moozo/internal/api/middleware"
+	"moozo/internal/api/openapi/generated"
 )
 
 // ErrorHandler covers request-decode and response-encode failures. Errors
@@ -16,7 +17,7 @@ func ErrorHandler(logger *zap.Logger, production bool) ogenerrors.ErrorHandler {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, err error) {
 		code := ogenerrors.ErrorCode(err)
 
-		logAt(withTrace(ctx, logger), code, "request failed",
+		middleware.LogAt(middleware.WithTrace(ctx, logger), code, "request failed",
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
 			zap.Int("status_code", code),

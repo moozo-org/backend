@@ -10,6 +10,8 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
+
+	"moozo/internal/app"
 )
 
 func observed() (*zap.Logger, *observer.ObservedLogs) {
@@ -19,7 +21,7 @@ func observed() (*zap.Logger, *observer.ObservedLogs) {
 
 func newTestHandler(production bool) *Handler {
 	logger, _ := observed()
-	return NewHandler(logger, production)
+	return NewHandler(logger, production, app.New(&fakeUserRepository{}))
 }
 
 func TestErrorHandlerHidesDetailFromClient(t *testing.T) {
@@ -27,7 +29,7 @@ func TestErrorHandlerHidesDetailFromClient(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	ErrorHandler(logger, true)(t.Context(), rec,
-		httptest.NewRequest(http.MethodGet, "/hello", nil), io.ErrUnexpectedEOF)
+		httptest.NewRequest(http.MethodPost, "/auth/register", nil), io.ErrUnexpectedEOF)
 
 	body, _ := io.ReadAll(rec.Result().Body)
 	if strings.Contains(string(body), "unexpected EOF") {
@@ -41,15 +43,6 @@ func TestErrorHandlerHidesDetailFromClient(t *testing.T) {
 	}
 	if !strings.Contains(logs.All()[0].ContextMap()["error"].(string), "unexpected EOF") {
 		t.Fatal("error detail missing from log")
-	}
-}
-
-func TestWithTraceInertWithoutProvider(t *testing.T) {
-	logger, logs := observed()
-	withTrace(t.Context(), logger).Info("x")
-
-	if _, ok := logs.All()[0].ContextMap()["trace_id"]; ok {
-		t.Fatal("trace_id emitted with no TracerProvider registered")
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 
 // t.Setenv registers the restore; os.Unsetenv does the actual clearing.
 func clearEnv(t *testing.T) {
-	for _, k := range []string{"PORT", "PRODUCTION", "ENV_PRODUCTION", "MONGODB_URI"} {
+	for _, k := range []string{"PORT", "PRODUCTION", "ENV_PRODUCTION", "MONGODB_URI", "MONGODB_DATABASE"} {
 		t.Setenv(k, "")
 		err := os.Unsetenv(k)
 		require.NoError(t, err)
@@ -33,6 +33,9 @@ func TestConfigDefaults(t *testing.T) {
 	}
 	if cfg.MongoURI != "mongodb://localhost:27017" {
 		t.Errorf("MongoURI = %q", cfg.MongoURI)
+	}
+	if cfg.MongoDatabase != "moozo" {
+		t.Errorf("MongoDatabase = %q", cfg.MongoDatabase)
 	}
 }
 

@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-//go:embed bundled/server.yaml
+//go:embed openapi/bundled/server.yaml
 var specFile []byte
 
 const docsHTML = `<!DOCTYPE html>

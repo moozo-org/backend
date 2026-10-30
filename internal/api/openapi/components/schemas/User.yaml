@@ -1,0 +1,19 @@
+type: object
+required:
+  - id
+  - email
+  - role
+  - created_at
+properties:
+  id:
+    type: string
+    format: uuid
+    example: 01923f5e-7a3c-7b1e-9f2d-4c6a8e0b1d3f
+  email:
+    type: string
+    format: email
+  role:
+    $ref: ./Role.yaml
+  created_at:
+    type: string
+    format: date-time

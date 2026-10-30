@@ -1,0 +1,5 @@
+description: The request is well-formed but its content is invalid
+content:
+  application/json:
+    schema:
+      $ref: ../schemas/Error.yaml

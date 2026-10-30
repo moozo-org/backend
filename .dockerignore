@@ -8,6 +8,6 @@ docker-compose.yml
 .env
 *.md
 
-internal/api/bundled/
-internal/api/generated/
+internal/api/openapi/bundled/
+internal/api/openapi/generated/
 node_modules

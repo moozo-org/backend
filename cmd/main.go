@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -11,15 +12,23 @@ import (
 	"syscall"
 	"time"
 
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
 	"moozo/internal/api"
-	"moozo/internal/api/generated"
+	"moozo/internal/api/middleware"
+	"moozo/internal/api/openapi/generated"
+	"moozo/internal/app"
 	"moozo/internal/config"
+	"moozo/internal/mongodb"
 )
 
-const shutdownTimeout = 10 * time.Second
+const (
+	shutdownTimeout = 10 * time.Second
+	mongoTimeout    = 10 * time.Second
+)
 
 func main() {
 	cfg, err := config.Load[Config]()
@@ -43,11 +52,24 @@ func main() {
 }
 
 func run(cfg Config, logger *zap.Logger) error {
-	handler := api.NewHandler(logger, cfg.Production)
+	db, disconnect, err := connectMongo(cfg)
+	if err != nil {
+		return err
+	}
+	defer disconnect()
+
+	initCtx, cancel := context.WithTimeout(context.Background(), mongoTimeout)
+	repo, err := mongodb.NewRepository(initCtx, db)
+	cancel()
+	if err != nil {
+		return err
+	}
+
+	handler := api.NewHandler(logger, cfg.Production, app.New(repo))
 
 	srv, err := generated.NewServer(handler,
 		generated.WithErrorHandler(api.ErrorHandler(logger, cfg.Production)),
-		generated.WithMiddleware(api.LoggingMiddleware(logger)),
+		generated.WithMiddleware(middleware.LoggingMiddleware(logger)),
 	)
 	if err != nil {
 		return err
@@ -96,8 +118,31 @@ func run(cfg Config, logger *zap.Logger) error {
 	return httpSrv.Shutdown(shutdownCtx)
 }
 
+func connectMongo(cfg Config) (*mongo.Database, func(), error) {
+	client, err := mongo.Connect(options.Client().ApplyURI(cfg.MongoURI))
+	if err != nil {
+		return nil, nil, fmt.Errorf("connect to mongo: %w", err)
+	}
+	disconnect := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), mongoTimeout)
+		defer cancel()
+		_ = client.Disconnect(ctx)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), mongoTimeout)
+	defer cancel()
+
+	if err := client.Ping(ctx, nil); err != nil {
+		disconnect()
+		return nil, nil, fmt.Errorf("ping mongo: %w", err)
+	}
+
+	return client.Database(cfg.MongoDatabase), disconnect, nil
+}
+
 type Config struct {
 	config.Environment
-	MongoURI string `envconfig:"MONGODB_URI" default:"mongodb://localhost:27017"`
-	Port     int    `envconfig:"PORT" default:"8080"`
+	MongoURI      string `envconfig:"MONGODB_URI" default:"mongodb://localhost:27017"`
+	MongoDatabase string `envconfig:"MONGODB_DATABASE" default:"moozo"`
+	Port          int    `envconfig:"PORT" default:"8080"`
 }

@@ -1,21 +1,28 @@
-package api
+package middleware
 
 import (
 	"errors"
 	"testing"
 
 	"github.com/ogen-go/ogen/middleware"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
-	"moozo/internal/api/generated"
+	"moozo/internal/api/openapi/generated"
 )
+
+func observed() (*zap.Logger, *observer.ObservedLogs) {
+	core, logs := observer.New(zap.DebugLevel)
+	return zap.New(core), logs
+}
 
 func TestLoggingMiddlewareLogsSuccess(t *testing.T) {
 	logger, logs := observed()
 
-	req := middleware.Request{Context: t.Context(), OperationName: "Hello", OperationID: "hello"}
+	req := middleware.Request{Context: t.Context(), OperationName: "Register", OperationID: "register"}
 	_, err := LoggingMiddleware(logger)(req, func(middleware.Request) (middleware.Response, error) {
-		return middleware.Response{Type: &generated.HelloOK{Message: "hi"}}, nil
+		return middleware.Response{Type: &generated.User{}}, nil
 	})
 	if err != nil {
 		t.Fatalf("err = %v", err)
@@ -26,7 +33,7 @@ func TestLoggingMiddlewareLogsSuccess(t *testing.T) {
 		t.Fatal("success was not logged")
 	}
 	fields := entry.All()[0].ContextMap()
-	if fields["operation"] != "Hello" || fields["operation_id"] != "hello" {
+	if fields["operation"] != "Register" || fields["operation_id"] != "register" {
 		t.Errorf("fields = %v", fields)
 	}
 	if _, ok := fields["took_ms"]; !ok {
@@ -39,7 +46,7 @@ func TestLoggingMiddlewareLogsFailureWithContext(t *testing.T) {
 	logger, logs := observed()
 	want := errors.New("boom")
 
-	req := middleware.Request{Context: t.Context(), OperationName: "Hello", OperationID: "hello"}
+	req := middleware.Request{Context: t.Context(), OperationName: "Register", OperationID: "register"}
 	_, err := LoggingMiddleware(logger)(req, func(middleware.Request) (middleware.Response, error) {
 		return middleware.Response{}, want
 	})
@@ -56,7 +63,7 @@ func TestLoggingMiddlewareLogsFailureWithContext(t *testing.T) {
 		t.Errorf("level = %v, want error", got.Level)
 	}
 	fields := got.ContextMap()
-	if fields["operation"] != "Hello" {
+	if fields["operation"] != "Register" {
 		t.Errorf("operation missing: %v", fields)
 	}
 	if fields["status_code"] != int64(500) {
@@ -78,9 +85,18 @@ func TestLogAtLevelByStatus(t *testing.T) {
 		{501, zapcore.ErrorLevel},
 	} {
 		logger, logs := observed()
-		logAt(logger, tc.code, "m")
+		LogAt(logger, tc.code, "m")
 		if got := logs.All()[0].Level; got != tc.want {
 			t.Errorf("code %d logged at %v, want %v", tc.code, got, tc.want)
 		}
+	}
+}
+
+func TestWithTraceInertWithoutProvider(t *testing.T) {
+	logger, logs := observed()
+	WithTrace(t.Context(), logger).Info("x")
+
+	if _, ok := logs.All()[0].ContextMap()["trace_id"]; ok {
+		t.Fatal("trace_id emitted with no TracerProvider registered")
 	}
 }

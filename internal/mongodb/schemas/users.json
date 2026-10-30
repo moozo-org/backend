@@ -1,0 +1,26 @@
+{
+  "validator": {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "title": "User",
+      "required": ["_id", "email", "password_hash", "role", "created_at", "updated_at"],
+      "additionalProperties": false,
+      "properties": {
+        "_id": { "bsonType": "binData" },
+        "email": { "bsonType": "string", "minLength": 3, "maxLength": 254 },
+        "password_hash": { "bsonType": "string", "minLength": 1 },
+        "role": { "enum": ["planner", "provider", "admin"] },
+        "created_at": { "bsonType": "date" },
+        "updated_at": { "bsonType": "date" }
+      }
+    }
+  },
+  "indexes": [
+    {
+      "key": { "email": 1 },
+      "name": "email_unique",
+      "unique": true,
+      "collation": { "locale": "en", "strength": 2 }
+    }
+  ]
+}
