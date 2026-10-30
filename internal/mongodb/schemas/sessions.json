@@ -1,0 +1,24 @@
+{
+  "validator": {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "title": "Session",
+      "required": ["_id", "user_id", "role", "created_at", "expires_at"],
+      "additionalProperties": false,
+      "properties": {
+        "_id": { "bsonType": "binData", "description": "SHA-256 of the bearer token" },
+        "user_id": { "bsonType": "binData" },
+        "role": { "enum": ["planner", "provider", "admin"] },
+        "created_at": { "bsonType": "date" },
+        "expires_at": { "bsonType": "date" }
+      }
+    }
+  },
+  "indexes": [
+    {
+      "key": { "expires_at": 1 },
+      "name": "expires_at_ttl",
+      "expireAfterSeconds": 0
+    }
+  ]
+}

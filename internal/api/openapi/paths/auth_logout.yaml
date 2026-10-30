@@ -1,0 +1,13 @@
+post:
+  operationId: logout
+  summary: End the current session
+  description: Revokes the bearer token immediately.
+  security:
+    - bearerAuth: []
+  responses:
+    '204':
+      description: Session ended
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    default:
+      $ref: ../components/responses/Error.yaml

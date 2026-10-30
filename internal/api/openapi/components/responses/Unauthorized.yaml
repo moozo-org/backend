@@ -1,0 +1,5 @@
+description: Missing, invalid or expired credentials
+content:
+  application/json:
+    schema:
+      $ref: ../schemas/Error.yaml

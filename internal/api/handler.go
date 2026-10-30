@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ogen-go/ogen/ogenerrors"
 	"go.uber.org/zap"
 
+	"moozo/internal/api/middleware"
 	"moozo/internal/api/openapi/generated"
 	"moozo/internal/app"
 )
@@ -22,10 +24,21 @@ func NewHandler(logger *zap.Logger, production bool, application app.Application
 	return &Handler{logger: logger, production: production, app: application}
 }
 
-// NewError shapes handler errors into the spec's default response.
-// LoggingMiddleware has already logged them.
+// NewError shapes handler and security errors into the spec's default
+// response. LoggingMiddleware has already logged handler errors; security
+// errors happen before middleware runs, so they are logged here.
 func (h *Handler) NewError(ctx context.Context, err error) *generated.ErrorStatusCode {
-	code := ogenerrors.ErrorCode(err)
+	code := statusCode(err)
+
+	var se *ogenerrors.SecurityError
+	if errors.As(err, &se) {
+		middleware.LogAt(middleware.WithTrace(ctx, h.logger), code, "authentication failed",
+			zap.String("operation", se.OperationName()),
+			zap.String("operation_id", se.OperationID()),
+			zap.Int("status_code", code),
+			zap.Error(err),
+		)
+	}
 
 	return &generated.ErrorStatusCode{
 		StatusCode: code,

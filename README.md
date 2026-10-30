@@ -23,6 +23,8 @@ Brings up the API on `:8080` and MongoDB on `:27017`.
 | Endpoint | Description |
 |---|---|
 | `POST /auth/register` | Create a `planner` or `provider` account |
+| `POST /auth/login` | Exchange email and password for a session token |
+| `POST /auth/logout` | Revoke the current session (`Authorization: Bearer <token>`) |
 | `GET /docs` | Swagger UI |
 | `GET /docs/openapi.yaml` | The OpenAPI spec the server was generated from |
 
@@ -43,7 +45,8 @@ internal/api/
     generate.go      //go:generate directives (bundle + codegen)
     bundled/         generated: the flattened spec
     generated/       generated: the ogen server
-moozo/               domain types: User, Role, UserRepository
+moozo/               domain types: User, Session and their repositories
+  moozotest/         in-memory repository fake for tests above the database
 internal/app/        application layer (CQRS): the HTTP handler calls a
   command/           command (changes state) or a query (reads state), which
   query/             holds the use case's logic and calls the repositories
@@ -128,6 +131,30 @@ role enums vs `moozo.Roles` / `moozo.SelfServiceRoles`).
 `RegisterRole` enum leaves out `admin`, so ogen rejects it with a 400 before the
 handler runs, and the register command checks again against `moozo.SelfServiceRoles`.
 Admins must be created some other way. A taken email returns 409.
+
+## Sessions
+
+`POST /auth/login` returns an opaque, random 256-bit token, valid for seven
+days (`command.SessionLifetime`). Clients send it as
+`Authorization: Bearer <token>` on operations that declare `bearerAuth` in the
+spec; ogen calls `Handler.HandleBearerAuth`, which runs the `Authenticate`
+query and puts the `moozo.Session` in the request context.
+
+- Only the token's SHA-256 is stored, as the `_id` of the `sessions`
+  collection, so a database leak does not hand out working tokens.
+- `POST /auth/logout` deletes the session: revocation is immediate.
+- The session stores the user's role at login, so authorization needs no user
+  lookup. Anything that changes a user's role must also delete their
+  sessions, or the old role lasts until they expire.
+- A TTL index on `expires_at` lets MongoDB delete expired sessions; it runs
+  about once a minute, so `Authenticate` also checks the expiry itself.
+- A wrong password and an unknown email get the same 401, and both cost one
+  bcrypt comparison, so neither the response nor its timing reveals which
+  emails have accounts.
+- ogen answers every security-handler error with 401; `statusCode` keeps 401
+  only for a missing or invalid token, so a database outage during
+  authentication is a 500. These errors bypass `LoggingMiddleware`, so
+  `Handler.NewError` logs them.
 
 ### Local overrides
 

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ogen-go/ogen/middleware"
@@ -74,21 +75,31 @@ func TestLoggingMiddlewareLogsFailureWithContext(t *testing.T) {
 	}
 }
 
-func TestLogAtLevelByStatus(t *testing.T) {
-	for _, tc := range []struct {
+func TestLogAt(t *testing.T) {
+	cases := map[string]struct {
 		code int
 		want zapcore.Level
 	}{
-		{400, zapcore.WarnLevel},
-		{415, zapcore.WarnLevel},
-		{500, zapcore.ErrorLevel},
-		{501, zapcore.ErrorLevel},
-	} {
-		logger, logs := observed()
-		LogAt(logger, tc.code, "m")
-		if got := logs.All()[0].Level; got != tc.want {
-			t.Errorf("code %d logged at %v, want %v", tc.code, got, tc.want)
-		}
+		"bad request":            {code: 400, want: zapcore.WarnLevel},
+		"unsupported media type": {code: 415, want: zapcore.WarnLevel},
+		"internal server error":  {code: 500, want: zapcore.ErrorLevel},
+		"not implemented":        {code: 501, want: zapcore.ErrorLevel},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			core, logs := observer.New(zap.DebugLevel)
+			LogAt(zap.New(core, zap.AddCaller()), tc.code, "m")
+
+			e := logs.All()[0]
+			if e.Level != tc.want {
+				t.Errorf("logged at %v, want %v", e.Level, tc.want)
+			}
+			// The caller is this test, not LogAt in logging.go.
+			if !strings.HasSuffix(e.Caller.File, "logging_test.go") {
+				t.Errorf("caller = %s, want this test", e.Caller)
+			}
+		})
 	}
 }
 

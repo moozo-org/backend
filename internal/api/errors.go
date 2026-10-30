@@ -15,7 +15,7 @@ import (
 // returned by a handler go through Handler.NewError instead.
 func ErrorHandler(logger *zap.Logger, production bool) ogenerrors.ErrorHandler {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, err error) {
-		code := ogenerrors.ErrorCode(err)
+		code := statusCode(err)
 
 		middleware.LogAt(middleware.WithTrace(ctx, logger), code, "request failed",
 			zap.String("method", r.Method),

@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 
 	"moozo/internal/app"
+	"moozo/moozo/moozotest"
 )
 
 func observed() (*zap.Logger, *observer.ObservedLogs) {
@@ -21,7 +22,7 @@ func observed() (*zap.Logger, *observer.ObservedLogs) {
 
 func newTestHandler(production bool) *Handler {
 	logger, _ := observed()
-	return NewHandler(logger, production, app.New(&fakeUserRepository{}))
+	return NewHandler(logger, production, app.New(&moozotest.Repository{}, &moozotest.Repository{}))
 }
 
 func TestErrorHandlerHidesDetailFromClient(t *testing.T) {

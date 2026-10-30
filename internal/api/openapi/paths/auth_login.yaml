@@ -1,0 +1,24 @@
+post:
+  operationId: login
+  summary: Start a session
+  description: >
+    Exchanges an email and password for a session token. Send it as
+    `Authorization: Bearer <token>` on authenticated requests. The token is
+    returned only here; the server keeps just its hash.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/LoginRequest.yaml
+  responses:
+    '200':
+      description: Session started
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/Session.yaml
+    '401':
+      $ref: ../components/responses/Unauthorized.yaml
+    default:
+      $ref: ../components/responses/Error.yaml

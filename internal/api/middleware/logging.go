@@ -56,13 +56,14 @@ func WithTrace(ctx context.Context, logger *zap.Logger) *zap.Logger {
 	)
 }
 
-// LogAt keeps client errors off the error level, where they would drown real faults.
+// LogAt keeps client errors off the error level, where they would drown real
+// faults. The entry's caller is LogAt's caller, not LogAt itself.
 func LogAt(logger *zap.Logger, code int, msg string, fields ...zap.Field) {
 	level := zapcore.ErrorLevel
 	if code < http.StatusInternalServerError {
 		level = zapcore.WarnLevel
 	}
-	if ce := logger.Check(level, msg); ce != nil {
+	if ce := logger.WithOptions(zap.AddCallerSkip(1)).Check(level, msg); ce != nil {
 		ce.Write(fields...)
 	}
 }

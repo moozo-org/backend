@@ -5,6 +5,7 @@ package app
 
 import (
 	"moozo/internal/app/command"
+	"moozo/internal/app/query"
 	"moozo/moozo"
 )
 
@@ -15,14 +16,23 @@ type Application struct {
 
 type Commands struct {
 	RegisterUser CommandHandler[command.RegisterUser, *moozo.User]
+	Login        CommandHandler[command.Login, *command.LoginResult]
+	Logout       CommandHandler[command.Logout, struct{}]
 }
 
-type Queries struct{}
+type Queries struct {
+	Authenticate QueryHandler[query.Authenticate, *moozo.Session]
+}
 
-func New(users moozo.UserRepository) Application {
+func New(users moozo.UserRepository, sessions moozo.SessionRepository) Application {
 	return Application{
 		Commands: Commands{
 			RegisterUser: command.NewRegisterUserHandler(users),
+			Login:        command.NewLoginHandler(users, sessions),
+			Logout:       command.NewLogoutHandler(sessions),
+		},
+		Queries: Queries{
+			Authenticate: query.NewAuthenticateHandler(sessions),
 		},
 	}
 }

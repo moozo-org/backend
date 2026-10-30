@@ -40,7 +40,13 @@ type User struct {
 
 var ErrEmailTaken = errors.New("email already registered")
 
+// ErrUserNotFound is returned when no account matches a lookup.
+var ErrUserNotFound = errors.New("user not found")
+
 type UserRepository interface {
 	// Register persists a new account.
 	Register(ctx context.Context, u *User) error
+	// FindUserByEmail matches email case-insensitively and returns
+	// ErrUserNotFound when there is no such account.
+	FindUserByEmail(ctx context.Context, email string) (*User, error)
 }
