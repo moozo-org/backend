@@ -27,6 +27,8 @@ Brings up the API on `:8080` and MongoDB on `:27017`.
 | `POST /auth/resend-verification` | Email a new code to a pending account |
 | `POST /auth/login` | Exchange email and password for a session token (active accounts only) |
 | `POST /auth/logout` | Revoke the current session (`Authorization: Bearer <token>`) |
+| `POST /auth/forgot-password` | Email a password reset code |
+| `POST /auth/reset-password` | Set a new password with that code; logs out every session |
 | `GET /docs` | Swagger UI |
 | `GET /docs/openapi.yaml` | The OpenAPI spec the server was generated from |
 
@@ -171,12 +173,34 @@ six-digit code. A pending account cannot log in: the right password gets a 403
 Emails go through [Brevo](https://developers.brevo.com)'s transactional API,
 chosen because it also does SMS. `pkg/brevo` is a generic client for its API;
 `internal/mail` writes the application's emails and sends them with it. Without `BREVO_API_KEY`
-the server logs each code instead — look for `verification code` in the API
-logs. Production refuses to start without a key.
+the server logs each code instead — look for `verification code` or
+`password reset code` in the API logs. Production refuses to start without a key.
 
 > Users created before verification existed have no `status` and cannot log
 > in. Drop the local database (`docker compose down -v`, or `db.dropDatabase()`
 > in `mongosh`) and rerun the seed.
+
+## Password reset
+
+`POST /auth/forgot-password` emails a six-digit code;
+`POST /auth/reset-password` with the email, the code and a new password sets
+it. It works like [email verification](#email-verification), with these
+differences:
+
+- A code is valid for 30 minutes (`command.PasswordResetCodeLifetime`), and
+  still for 5 attempts and one email a minute.
+- Codes live in their own `password_reset_codes` collection, so asking for a
+  reset does not replace a pending user's verification code.
+- A code works once: it is deleted before the password changes, and of two
+  concurrent resets with it only the one that deleted it goes on.
+- The new password follows the sign-up rules (8 to 72 bytes). It is checked
+  before the code, so an invalid one does not spend an attempt.
+- A reset deletes every session of the user, through the `user_id` index on
+  `sessions`, and activates a pending account, since the code proves the user
+  owns the email.
+- forgot-password always answers 202, and a wrong, expired or used code or an
+  unknown email all get the same 400, so neither reveals which emails have
+  accounts.
 
 ## Sessions
 

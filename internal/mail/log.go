@@ -28,3 +28,11 @@ func (l Log) SendVerificationCode(_ context.Context, email, code string) error {
 	)
 	return nil
 }
+
+func (l Log) SendPasswordResetCode(_ context.Context, email, code string) error {
+	l.logger.Info("password reset code (not emailed: BREVO_API_KEY is unset)",
+		zap.String("email", email),
+		zap.String("code", code),
+	)
+	return nil
+}

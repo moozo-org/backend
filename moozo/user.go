@@ -67,4 +67,7 @@ type UserRepository interface {
 	// ActivateUser sets the user's status to active and UpdatedAt to at. It
 	// returns ErrUserNotFound when there is no such account.
 	ActivateUser(ctx context.Context, id uuid.UUID, at time.Time) error
+	// UpdatePassword replaces the user's password hash and sets UpdatedAt to
+	// at. It returns ErrUserNotFound when there is no such account.
+	UpdatePassword(ctx context.Context, id uuid.UUID, passwordHash string, at time.Time) error
 }

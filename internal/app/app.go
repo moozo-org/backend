@@ -21,6 +21,9 @@ type Commands struct {
 
 	VerifyEmail        CommandHandler[command.VerifyEmail, struct{}]
 	ResendVerification CommandHandler[command.ResendVerification, struct{}]
+
+	ForgotPassword CommandHandler[command.ForgotPassword, struct{}]
+	ResetPassword  CommandHandler[command.ResetPassword, struct{}]
 }
 
 type Queries struct {
@@ -31,6 +34,7 @@ func New(
 	users moozo.UserRepository,
 	sessions moozo.SessionRepository,
 	codes moozo.VerificationCodeRepository,
+	resetCodes moozo.PasswordResetCodeRepository,
 	mailer moozo.Mailer,
 ) Application {
 	return Application{
@@ -41,6 +45,9 @@ func New(
 
 			VerifyEmail:        command.NewVerifyEmailHandler(users, codes),
 			ResendVerification: command.NewResendVerificationHandler(users, codes, mailer),
+
+			ForgotPassword: command.NewForgotPasswordHandler(users, resetCodes, mailer),
+			ResetPassword:  command.NewResetPasswordHandler(users, sessions, resetCodes),
 		},
 		Queries: Queries{
 			Authenticate: query.NewAuthenticateHandler(sessions),

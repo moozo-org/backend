@@ -32,7 +32,7 @@ func newTestServer(t *testing.T, repo *moozotest.Repository) *generated.Server {
 func newTestServerWithMailer(t *testing.T, repo *moozotest.Repository, mailer *moozotest.Mailer) *generated.Server {
 	t.Helper()
 	logger, _ := observed()
-	h := NewHandler(logger, false, app.New(repo, repo, repo, mailer))
+	h := NewHandler(logger, false, app.New(repo, repo, repo, repo, mailer))
 	srv, err := generated.NewServer(h, h, generated.WithErrorHandler(ErrorHandler(logger, false)))
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
@@ -63,7 +63,7 @@ func withUserStatus(t *testing.T, email, password string, status moozo.Status) *
 
 func newRegisterHandler(repo *moozotest.Repository) *Handler {
 	logger, _ := observed()
-	return NewHandler(logger, false, app.New(repo, repo, repo, &moozotest.Mailer{}))
+	return NewHandler(logger, false, app.New(repo, repo, repo, repo, &moozotest.Mailer{}))
 }
 
 func TestRegisterReturnsCreatedUser(t *testing.T) {
@@ -137,7 +137,7 @@ func TestRegisterMapsErrors(t *testing.T) {
 func TestRegisterMailFailure(t *testing.T) {
 	repo := &moozotest.Repository{}
 	logger, logs := observed()
-	h := NewHandler(logger, false, app.New(repo, repo, repo, &moozotest.Mailer{Err: errors.New("boom")}))
+	h := NewHandler(logger, false, app.New(repo, repo, repo, repo, &moozotest.Mailer{Err: errors.New("boom")}))
 
 	res, err := h.Register(t.Context(), &generated.RegisterRequest{
 		Email:    "jane@example.com",
@@ -430,6 +430,91 @@ func TestResendVerificationHTTP(t *testing.T) {
 			}
 			if got := len(mailer.Sent()); got != tc.wantSent {
 				t.Errorf("sent %d codes, want %d", got, tc.wantSent)
+			}
+		})
+	}
+}
+
+// The whole flow: ask for a code, reset with it, and log in with the new
+// password; the reset logs out every session and spends the code.
+func TestResetPasswordFlowHTTP(t *testing.T) {
+	repo := withUser(t, "jane@example.com", "correct horse")
+	mailer := &moozotest.Mailer{}
+	srv := newTestServerWithMailer(t, repo, mailer)
+	token := login(t, srv)
+
+	if rec := serve(t, srv, "/auth/forgot-password", `{"email":"jane@example.com"}`, ""); rec.Code != http.StatusAccepted {
+		t.Fatalf("forgot-password: status = %d, body = %s", rec.Code, rec.Body)
+	}
+	sent := mailer.SentResets()
+	if len(sent) != 1 {
+		t.Fatalf("sent %+v, want one reset code", sent)
+	}
+
+	reset := fmt.Sprintf(`{"email":"jane@example.com","code":%q,"new_password":"battery staple"}`, sent[0].Code)
+	if rec := serve(t, srv, "/auth/reset-password", reset, ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("reset-password: status = %d, body = %s", rec.Code, rec.Body)
+	}
+
+	if rec := serve(t, srv, "/auth/reset-password", reset, ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("reused code: status = %d, want 400", rec.Code)
+	}
+	if rec := serve(t, srv, "/auth/logout", "", token); rec.Code != http.StatusUnauthorized {
+		t.Errorf("old session: status = %d, want 401", rec.Code)
+	}
+	if rec := serve(t, srv, "/auth/login", janeLogin, ""); rec.Code != http.StatusUnauthorized {
+		t.Errorf("old password: status = %d, want 401", rec.Code)
+	}
+	newLogin := `{"email":"jane@example.com","password":"battery staple"}`
+	if rec := serve(t, srv, "/auth/login", newLogin, ""); rec.Code != http.StatusOK {
+		t.Errorf("new password: status = %d, want 200", rec.Code)
+	}
+}
+
+func TestForgotPasswordHTTP(t *testing.T) {
+	cases := map[string]struct {
+		body    string
+		mailErr error
+		want    int
+	}{
+		"known email": {body: `{"email":"jane@example.com"}`, want: http.StatusAccepted},
+		// Same answer, so the endpoint does not reveal which emails have
+		// accounts.
+		"unknown email": {body: `{"email":"eve@example.com"}`, want: http.StatusAccepted},
+		"invalid email": {body: `{"email":"jane"}`, want: http.StatusBadRequest},
+		"mail outage":   {body: `{"email":"jane@example.com"}`, mailErr: errors.New("boom"), want: http.StatusInternalServerError},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := newTestServerWithMailer(t, withUser(t, "jane@example.com", "correct horse"), &moozotest.Mailer{Err: tc.mailErr})
+
+			if rec := serve(t, srv, "/auth/forgot-password", tc.body, ""); rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tc.want, rec.Body)
+			}
+		})
+	}
+}
+
+func TestResetPasswordHTTP(t *testing.T) {
+	cases := map[string]struct {
+		body string
+		want int
+	}{
+		"wrong code":         {body: `{"email":"jane@example.com","code":"123456","new_password":"battery staple"}`, want: http.StatusBadRequest},
+		"unknown email":      {body: `{"email":"eve@example.com","code":"123456","new_password":"battery staple"}`, want: http.StatusBadRequest},
+		"short code":         {body: `{"email":"jane@example.com","code":"12345","new_password":"battery staple"}`, want: http.StatusBadRequest},
+		"password too short": {body: `{"email":"jane@example.com","code":"123456","new_password":"short"}`, want: http.StatusBadRequest},
+		"missing password":   {body: `{"email":"jane@example.com","code":"123456"}`, want: http.StatusBadRequest},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			// No code was sent, so no code can be right.
+			srv := newTestServer(t, withUser(t, "jane@example.com", "correct horse"))
+
+			if rec := serve(t, srv, "/auth/reset-password", tc.body, ""); rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tc.want, rec.Body)
 			}
 		})
 	}

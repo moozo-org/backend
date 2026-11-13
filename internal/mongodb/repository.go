@@ -13,6 +13,8 @@ type Repository struct {
 	users    *mongo.Collection
 	sessions *mongo.Collection
 	codes    *mongo.Collection
+	// resetCodes holds password-reset codes; codes holds verification ones.
+	resetCodes *mongo.Collection
 }
 
 // NewRepository applies every collection schema before returning, so a
@@ -22,8 +24,9 @@ func NewRepository(ctx context.Context, db *mongo.Database) (*Repository, error)
 		return nil, err
 	}
 	return &Repository{
-		users:    db.Collection(UsersCollectionName),
-		sessions: db.Collection(SessionsCollectionName),
-		codes:    db.Collection(VerificationCodesCollectionName),
+		users:      db.Collection(UsersCollectionName),
+		sessions:   db.Collection(SessionsCollectionName),
+		codes:      db.Collection(VerificationCodesCollectionName),
+		resetCodes: db.Collection(PasswordResetCodesCollectionName),
 	}, nil
 }
