@@ -29,10 +29,15 @@ type userDocument struct {
 	UpdatedAt    time.Time   `bson:"updated_at"`
 }
 
+// userID encodes a user ID as stored in users._id and sessions.user_id.
+// Subtype 4 is the standard BSON encoding for UUIDs.
+func userID(id uuid.UUID) bson.Binary {
+	return bson.Binary{Subtype: bson.TypeBinaryUUID, Data: id[:]}
+}
+
 func newUserDocument(u *moozo.User) userDocument {
 	return userDocument{
-		// Subtype 4 is the standard BSON encoding for UUIDs.
-		ID:           bson.Binary{Subtype: bson.TypeBinaryUUID, Data: u.ID[:]},
+		ID:           userID(u.ID),
 		Email:        u.Email,
 		PasswordHash: u.PasswordHash,
 		Role:         string(u.Role),
@@ -54,6 +59,35 @@ func (d userDocument) toUser() (*moozo.User, error) {
 		CreatedAt:    d.CreatedAt,
 		UpdatedAt:    d.UpdatedAt,
 	}, nil
+}
+
+func (r *Repository) FindUserByID(ctx context.Context, id uuid.UUID) (*moozo.User, error) {
+	var d userDocument
+	err := r.users.FindOne(ctx, bson.D{{Key: "_id", Value: userID(id)}}).Decode(&d)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, moozo.ErrUserNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return d.toUser()
+}
+
+func (r *Repository) UpdatePassword(ctx context.Context, id uuid.UUID, passwordHash string, at time.Time) error {
+	res, err := r.users.UpdateOne(ctx,
+		bson.D{{Key: "_id", Value: userID(id)}},
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "password_hash", Value: passwordHash},
+			{Key: "updated_at", Value: at},
+		}}},
+	)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return moozo.ErrUserNotFound
+	}
+	return nil
 }
 
 // emailCollation must match the email_unique index in schemas/users.json;

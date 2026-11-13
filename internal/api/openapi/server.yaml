@@ -9,6 +9,8 @@ paths:
     $ref: "paths/auth_login.yaml"
   /auth/logout:
     $ref: "paths/auth_logout.yaml"
+  /auth/change-password:
+    $ref: "paths/auth_change_password.yaml"
 components:
   securitySchemes:
     bearerAuth:

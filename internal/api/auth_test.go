@@ -309,3 +309,58 @@ func TestLogoutHTTP(t *testing.T) {
 		})
 	}
 }
+
+func TestChangePasswordHTTP(t *testing.T) {
+	cases := map[string]struct {
+		body    string
+		noToken bool
+		repoErr error // set after login
+		want    int
+	}{
+		"valid change":    {body: `{"current_password":"correct horse","new_password":"battery staple"}`, want: http.StatusNoContent},
+		"wrong current":   {body: `{"current_password":"wrong horse","new_password":"battery staple"}`, want: http.StatusForbidden},
+		"same password":   {body: `{"current_password":"correct horse","new_password":"correct horse"}`, want: http.StatusBadRequest},
+		"new too short":   {body: `{"current_password":"correct horse","new_password":"short"}`, want: http.StatusBadRequest},
+		"missing current": {body: `{"new_password":"battery staple"}`, want: http.StatusBadRequest},
+		"no token":        {body: `{"current_password":"correct horse","new_password":"battery staple"}`, noToken: true, want: http.StatusUnauthorized},
+		"database outage": {body: `{"current_password":"correct horse","new_password":"battery staple"}`, repoErr: errors.New("boom"), want: http.StatusInternalServerError},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			repo := withUser(t, "jane@example.com", "correct horse")
+			srv := newTestServer(t, repo)
+			other := login(t, srv)
+			current := login(t, srv)
+			repo.Err = tc.repoErr
+
+			token := current
+			if tc.noToken {
+				token = ""
+			}
+			rec := serve(t, srv, "/auth/change-password", tc.body, token)
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d; body = %s", rec.Code, tc.want, rec.Body)
+			}
+			if tc.want != http.StatusNoContent {
+				return
+			}
+
+			// The other session is revoked, the caller's is not, and only
+			// the new password logs in.
+			if rec := serve(t, srv, "/auth/logout", "", other); rec.Code != http.StatusUnauthorized {
+				t.Errorf("other session: status = %d, want 401", rec.Code)
+			}
+			if rec := serve(t, srv, "/auth/logout", "", current); rec.Code != http.StatusNoContent {
+				t.Errorf("current session: status = %d, want 204", rec.Code)
+			}
+			if rec := serve(t, srv, "/auth/login", janeLogin, ""); rec.Code != http.StatusUnauthorized {
+				t.Errorf("old password: status = %d, want 401", rec.Code)
+			}
+			newLogin := `{"email":"jane@example.com","password":"battery staple"}`
+			if rec := serve(t, srv, "/auth/login", newLogin, ""); rec.Code != http.StatusOK {
+				t.Errorf("new password: status = %d, want 200", rec.Code)
+			}
+		})
+	}
+}

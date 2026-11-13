@@ -19,6 +19,10 @@
       "key": { "expires_at": 1 },
       "name": "expires_at_ttl",
       "expireAfterSeconds": 0
+    },
+    {
+      "key": { "user_id": 1 },
+      "name": "user_id"
     }
   ]
 }

@@ -6,6 +6,9 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/google/uuid"
 
 	"moozo/moozo"
 )
@@ -66,6 +69,35 @@ func (r *Repository) FindUserByEmail(_ context.Context, email string) (*moozo.Us
 	return nil, moozo.ErrUserNotFound
 }
 
+func (r *Repository) FindUserByID(_ context.Context, id uuid.UUID) (*moozo.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return nil, r.Err
+	}
+	for _, u := range r.users {
+		if u.ID == id {
+			return u, nil
+		}
+	}
+	return nil, moozo.ErrUserNotFound
+}
+
+func (r *Repository) UpdatePassword(_ context.Context, id uuid.UUID, passwordHash string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
+	for _, u := range r.users {
+		if u.ID == id {
+			u.PasswordHash, u.UpdatedAt = passwordHash, at
+			return nil
+		}
+	}
+	return moozo.ErrUserNotFound
+}
+
 func (r *Repository) findUser(email string) *moozo.User {
 	for _, u := range r.users {
 		if strings.EqualFold(u.Email, email) {
@@ -107,5 +139,19 @@ func (r *Repository) DeleteSession(_ context.Context, hash moozo.SessionTokenHas
 		return r.Err
 	}
 	delete(r.sessions, hash)
+	return nil
+}
+
+func (r *Repository) DeleteOtherSessions(_ context.Context, userID uuid.UUID, keep moozo.SessionTokenHash) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
+	for hash, s := range r.sessions {
+		if s.UserID == userID && hash != keep {
+			delete(r.sessions, hash)
+		}
+	}
 	return nil
 }
