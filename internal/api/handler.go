@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	"github.com/ogen-go/ogen/ogenerrors"
 	"go.uber.org/zap"
@@ -32,7 +33,11 @@ func (h *Handler) NewError(ctx context.Context, err error) *generated.ErrorStatu
 
 	var se *ogenerrors.SecurityError
 	if errors.As(err, &se) {
-		middleware.LogAt(middleware.WithTrace(ctx, h.logger), code, "authentication failed",
+		msg := "authentication failed"
+		if code == http.StatusForbidden {
+			msg = "access denied"
+		}
+		middleware.LogAt(middleware.WithTrace(ctx, h.logger), code, msg,
 			zap.String("operation", se.OperationName()),
 			zap.String("operation_id", se.OperationID()),
 			zap.Int("status_code", code),

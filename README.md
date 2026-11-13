@@ -197,9 +197,25 @@ query and puts the `moozo.Session` in the request context.
 - A wrong password and an unknown email get the same 401, and both cost one
   bcrypt comparison, so neither the response nor its timing reveals which
   emails have accounts.
+- An operation restricts itself to some roles by listing them on its security
+  requirement; `HandleBearerAuth` answers any other role with 403. Leaving
+  the list empty, as `logout` does, admits every logged-in user. Admins are
+  not let in implicitly: list `admin` where they need access.
+
+  ```yaml
+  security:
+    - bearerAuth: [planner, admin]
+  responses:
+    '403':
+      $ref: ../components/responses/Forbidden.yaml
+  ```
+
+  `TestSpecSecurityRolesAreDomainRoles` fails on a role missing from
+  `moozo.Roles`, since a typo would lock everyone out.
 - ogen answers every security-handler error with 401; `statusCode` keeps 401
-  only for a missing or invalid token, so a database outage during
-  authentication is a 500. These errors bypass `LoggingMiddleware`, so
+  only for a missing or invalid token, gives 403 for a role the operation does
+  not allow, and makes anything else, such as a database outage during
+  authentication, a 500. These errors bypass `LoggingMiddleware`, so
   `Handler.NewError` logs them.
 
 ### Local overrides
