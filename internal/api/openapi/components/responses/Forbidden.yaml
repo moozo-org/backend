@@ -1,0 +1,5 @@
+description: Authenticated, but the session's role is not allowed on this operation
+content:
+  application/json:
+    schema:
+      $ref: ../schemas/Error.yaml
