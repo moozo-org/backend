@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"errors"
 	"strings"
 	"testing"
@@ -66,33 +67,22 @@ func TestResetPassword(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				repo := &moozotest.Repository{}
-				status := tc.status
-				if status == "" {
-					status = moozo.StatusActive
-				}
+				status := cmp.Or(tc.status, moozo.StatusActive)
 				jane, sent := newJaneWithResetCode(t, repo, status)
 				oldHash := jane.PasswordHash
-				// Jane is logged in somewhere; Bob must stay logged in.
-				_, janes := moozo.NewSessionToken()
-				_, bobs := moozo.NewSessionToken()
-				for _, s := range []*moozo.Session{{TokenHash: janes, UserID: jane.ID}, {TokenHash: bobs, UserID: uuid.Must(uuid.NewV7())}} {
-					if err := repo.CreateSession(t.Context(), s); err != nil {
-						t.Fatal(err)
-					}
-				}
+				janes, bobs := logInJaneAndBob(t, repo, jane)
 				if tc.before != nil {
 					tc.before(t, repo, jane)
 				}
 
-				cmd := ResetPassword{Email: jane.Email, Code: sent, NewPassword: newPassword}
-				if tc.email != "" {
-					cmd.Email = tc.email
-				}
+				code := sent
 				if tc.code != nil {
-					cmd.Code = tc.code(sent)
+					code = tc.code(sent)
 				}
-				if tc.password != "" {
-					cmd.NewPassword = tc.password
+				cmd := ResetPassword{
+					Email:       cmp.Or(tc.email, jane.Email),
+					Code:        code,
+					NewPassword: cmp.Or(tc.password, newPassword),
 				}
 				repo.Err = tc.repoErr
 
@@ -106,28 +96,56 @@ func TestResetPassword(t *testing.T) {
 				}
 
 				if tc.wantErr != nil {
-					if jane.PasswordHash != oldHash || jane.Status != status {
-						t.Error("account changed despite the error")
-					}
-					if repo.Sessions() != 2 {
-						t.Errorf("sessions = %d, want both kept", repo.Sessions())
-					}
-					return
-				}
-				if bcrypt.CompareHashAndPassword([]byte(jane.PasswordHash), []byte(newPassword)) != nil {
-					t.Error("new password does not match the stored hash")
-				}
-				if jane.Status != moozo.StatusActive {
-					t.Errorf("Status = %q, want active", jane.Status)
-				}
-				if _, err := repo.FindSession(t.Context(), janes); err == nil {
-					t.Error("jane's session survived the reset")
-				}
-				if _, err := repo.FindSession(t.Context(), bobs); err != nil {
-					t.Error("another user's session was revoked")
+					checkResetRejected(t, repo, jane, oldHash, status)
+				} else {
+					checkResetApplied(t, repo, jane, janes, bobs)
 				}
 			})
 		})
+	}
+}
+
+// logInJaneAndBob gives jane and another user a session each and returns
+// their token hashes.
+func logInJaneAndBob(t *testing.T, repo *moozotest.Repository, jane *moozo.User) (janes, bobs moozo.SessionTokenHash) {
+	t.Helper()
+	_, janes = moozo.NewSessionToken()
+	_, bobs = moozo.NewSessionToken()
+	for _, s := range []*moozo.Session{{TokenHash: janes, UserID: jane.ID}, {TokenHash: bobs, UserID: uuid.Must(uuid.NewV7())}} {
+		if err := repo.CreateSession(t.Context(), s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return janes, bobs
+}
+
+// checkResetRejected checks that a failed reset left jane's account and every
+// session untouched.
+func checkResetRejected(t *testing.T, repo *moozotest.Repository, jane *moozo.User, oldHash string, status moozo.Status) {
+	t.Helper()
+	if jane.PasswordHash != oldHash || jane.Status != status {
+		t.Error("account changed despite the error")
+	}
+	if repo.Sessions() != 2 {
+		t.Errorf("sessions = %d, want both kept", repo.Sessions())
+	}
+}
+
+// checkResetApplied checks that jane has the new password, is active and was
+// logged out, while the other user kept their session.
+func checkResetApplied(t *testing.T, repo *moozotest.Repository, jane *moozo.User, janes, bobs moozo.SessionTokenHash) {
+	t.Helper()
+	if bcrypt.CompareHashAndPassword([]byte(jane.PasswordHash), []byte(newPassword)) != nil {
+		t.Error("new password does not match the stored hash")
+	}
+	if jane.Status != moozo.StatusActive {
+		t.Errorf("Status = %q, want active", jane.Status)
+	}
+	if _, err := repo.FindSession(t.Context(), janes); err == nil {
+		t.Error("jane's session survived the reset")
+	}
+	if _, err := repo.FindSession(t.Context(), bobs); err != nil {
+		t.Error("another user's session was revoked")
 	}
 }
 

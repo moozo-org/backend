@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"errors"
 	"testing"
 	"testing/synctest"
@@ -34,52 +35,48 @@ func TestForgotPassword(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				repo := &moozotest.Repository{}
-				status := tc.status
-				if status == "" {
-					status = moozo.StatusActive
-				}
-				jane := newJaneWithStatus(t, repo, status)
+				jane := newJaneWithStatus(t, repo, cmp.Or(tc.status, moozo.StatusActive))
 				if tc.before != nil {
 					tc.before(t, repo, jane)
-				}
-				email := jane.Email
-				if tc.email != "" {
-					email = tc.email
 				}
 				repo.Err = tc.repoErr
 				mailer := &moozotest.Mailer{}
 
-				_, err := NewForgotPasswordHandler(repo, repo, mailer).Execute(t.Context(), ForgotPassword{Email: email})
+				_, err := NewForgotPasswordHandler(repo, repo, mailer).Execute(t.Context(), ForgotPassword{Email: cmp.Or(tc.email, jane.Email)})
 				repo.Err = nil
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("Execute() error = %v, want %v", err, tc.wantErr)
 				}
-				sent := mailer.SentResets()
-				if !tc.wantNew {
-					if len(sent) != 0 {
-						t.Errorf("sent %+v, want nothing", sent)
-					}
-					return
-				}
-
-				if len(sent) != 1 || sent[0].Email != jane.Email {
-					t.Fatalf("sent %+v, want one code to %s", sent, jane.Email)
-				}
-				c := repo.PasswordResetCode(jane.ID)
-				if c == nil {
-					t.Fatal("no code stored")
-				}
-				if c.CodeHash != moozo.HashVerificationCode(sent[0].Code) {
-					t.Error("stored hash does not match the emailed code")
-				}
-				if got := c.ExpiresAt.Sub(c.CreatedAt); got != PasswordResetCodeLifetime {
-					t.Errorf("lifetime = %v, want %v", got, PasswordResetCodeLifetime)
-				}
-				if len(mailer.Sent()) != 0 || repo.VerificationCode(jane.ID) != nil {
-					t.Error("a verification code was sent or stored")
+				if tc.wantNew {
+					checkResetCodeSent(t, repo, mailer, jane)
+				} else if sent := mailer.SentResets(); len(sent) != 0 {
+					t.Errorf("sent %+v, want nothing", sent)
 				}
 			})
 		})
+	}
+}
+
+// checkResetCodeSent checks that jane, and only she, was emailed a reset code
+// that matches the stored one.
+func checkResetCodeSent(t *testing.T, repo *moozotest.Repository, mailer *moozotest.Mailer, jane *moozo.User) {
+	t.Helper()
+	sent := mailer.SentResets()
+	if len(sent) != 1 || sent[0].Email != jane.Email {
+		t.Fatalf("sent %+v, want one code to %s", sent, jane.Email)
+	}
+	c := repo.PasswordResetCode(jane.ID)
+	if c == nil {
+		t.Fatal("no code stored")
+	}
+	if c.CodeHash != moozo.HashVerificationCode(sent[0].Code) {
+		t.Error("stored hash does not match the emailed code")
+	}
+	if got := c.ExpiresAt.Sub(c.CreatedAt); got != PasswordResetCodeLifetime {
+		t.Errorf("lifetime = %v, want %v", got, PasswordResetCodeLifetime)
+	}
+	if len(mailer.Sent()) != 0 || repo.VerificationCode(jane.ID) != nil {
+		t.Error("a verification code was sent or stored")
 	}
 }
 

@@ -54,37 +54,51 @@ func (h ResetPasswordHandler) Execute(ctx context.Context, cmd ResetPassword) (s
 		return struct{}{}, fmt.Errorf("find user: %w", err)
 	}
 
-	ok, err := codeAttempts{consume: h.codes.ConsumePasswordResetAttempt, remove: h.deleteCode}.check(ctx, u.ID, cmd.Code)
-	if err != nil {
+	if err := h.redeemCode(ctx, u.ID, cmd.Code); err != nil {
 		return struct{}{}, err
 	}
+	return struct{}{}, h.applyReset(ctx, u, hash)
+}
+
+// redeemCode checks code against the user's reset code and deletes it, or
+// returns ErrInvalidResetCode.
+func (h ResetPasswordHandler) redeemCode(ctx context.Context, userID uuid.UUID, code string) error {
+	ok, err := codeAttempts{consume: h.codes.ConsumePasswordResetAttempt, remove: h.deleteCode}.check(ctx, userID, code)
+	if err != nil {
+		return err
+	}
 	if !ok {
-		return struct{}{}, ErrInvalidResetCode
+		return ErrInvalidResetCode
 	}
 	// Deleting before using the code makes it single-use: of two concurrent
 	// resets with it, only the one that deletes it goes on.
-	deleted, err := h.codes.DeletePasswordResetCode(ctx, u.ID)
+	deleted, err := h.codes.DeletePasswordResetCode(ctx, userID)
 	if err != nil {
-		return struct{}{}, fmt.Errorf("delete reset code: %w", err)
+		return fmt.Errorf("delete reset code: %w", err)
 	}
 	if !deleted {
-		return struct{}{}, ErrInvalidResetCode
+		return ErrInvalidResetCode
 	}
+	return nil
+}
 
+// applyReset stores the new password hash, activates a pending user and
+// revokes every session of the user.
+func (h ResetPasswordHandler) applyReset(ctx context.Context, u *moozo.User, hash []byte) error {
 	// MongoDB stores dates at millisecond precision
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	if err := h.users.UpdatePassword(ctx, u.ID, string(hash), now); err != nil {
-		return struct{}{}, fmt.Errorf("update password: %w", err)
+		return fmt.Errorf("update password: %w", err)
 	}
 	if u.Status == moozo.StatusPending {
 		if err := h.users.ActivateUser(ctx, u.ID, now); err != nil {
-			return struct{}{}, fmt.Errorf("activate user: %w", err)
+			return fmt.Errorf("activate user: %w", err)
 		}
 	}
 	if err := h.sessions.DeleteUserSessions(ctx, u.ID); err != nil {
-		return struct{}{}, fmt.Errorf("revoke sessions: %w", err)
+		return fmt.Errorf("revoke sessions: %w", err)
 	}
-	return struct{}{}, nil
+	return nil
 }
 
 func (h ResetPasswordHandler) deleteCode(ctx context.Context, userID uuid.UUID) error {
