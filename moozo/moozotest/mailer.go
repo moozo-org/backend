@@ -7,7 +7,7 @@ import (
 	"moozo/moozo"
 )
 
-// SentCode is a verification code a Mailer was asked to send.
+// SentCode is a code a Mailer was asked to send.
 type SentCode struct {
 	Email string
 	Code  string
@@ -19,8 +19,9 @@ type Mailer struct {
 	// Err, when set, is returned by every method, to simulate an outage.
 	Err error
 
-	mu   sync.Mutex
-	sent []SentCode
+	mu     sync.Mutex
+	sent   []SentCode
+	resets []SentCode
 }
 
 var _ moozo.Mailer = (*Mailer)(nil)
@@ -35,9 +36,26 @@ func (m *Mailer) SendVerificationCode(_ context.Context, email, code string) err
 	return nil
 }
 
-// Sent returns the codes sent, oldest first.
+// Sent returns the verification codes sent, oldest first.
 func (m *Mailer) Sent() []SentCode {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]SentCode(nil), m.sent...)
+}
+
+func (m *Mailer) SendPasswordResetCode(_ context.Context, email, code string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.Err != nil {
+		return m.Err
+	}
+	m.resets = append(m.resets, SentCode{Email: email, Code: code})
+	return nil
+}
+
+// SentResets returns the password-reset codes sent, oldest first.
+func (m *Mailer) SentResets() []SentCode {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]SentCode(nil), m.resets...)
 }

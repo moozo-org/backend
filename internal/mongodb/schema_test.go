@@ -58,9 +58,10 @@ func bsonFields(typ reflect.Type) []string {
 
 func TestSchemasMatchDocuments(t *testing.T) {
 	cases := map[string]reflect.Type{
-		UsersCollectionName:             reflect.TypeFor[userDocument](),
-		SessionsCollectionName:          reflect.TypeFor[sessionDocument](),
-		VerificationCodesCollectionName: reflect.TypeFor[verificationCodeDocument](),
+		UsersCollectionName:              reflect.TypeFor[userDocument](),
+		SessionsCollectionName:           reflect.TypeFor[sessionDocument](),
+		VerificationCodesCollectionName:  reflect.TypeFor[verificationCodeDocument](),
+		PasswordResetCodesCollectionName: reflect.TypeFor[verificationCodeDocument](),
 	}
 
 	for collection, doc := range cases {
@@ -126,7 +127,7 @@ func TestUsersSchema(t *testing.T) {
 // Expired sessions and verification codes are deleted by MongoDB; callers
 // still check ExpiresAt because the TTL monitor runs only about once a minute.
 func TestExpiringSchemas(t *testing.T) {
-	for _, collection := range []string{SessionsCollectionName, VerificationCodesCollectionName} {
+	for _, collection := range []string{SessionsCollectionName, VerificationCodesCollectionName, PasswordResetCodesCollectionName} {
 		t.Run(collection, func(t *testing.T) {
 			coll, _ := loadSchema(t, collection)
 

@@ -83,3 +83,9 @@ func (r *Repository) DeleteSession(ctx context.Context, hash moozo.SessionTokenH
 	_, err := r.sessions.DeleteOne(ctx, bson.D{{Key: "_id", Value: tokenHashID(hash)}})
 	return err
 }
+
+// DeleteUserSessions uses the user_id index from schemas/sessions.json.
+func (r *Repository) DeleteUserSessions(ctx context.Context, userID uuid.UUID) error {
+	_, err := r.sessions.DeleteMany(ctx, bson.D{{Key: "user_id", Value: uuidID(userID)}})
+	return err
+}

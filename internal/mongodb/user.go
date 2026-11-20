@@ -64,6 +64,23 @@ func (d userDocument) toUser() (*moozo.User, error) {
 	}, nil
 }
 
+func (r *Repository) UpdatePassword(ctx context.Context, id uuid.UUID, passwordHash string, at time.Time) error {
+	res, err := r.users.UpdateOne(ctx,
+		bson.D{{Key: "_id", Value: uuidID(id)}},
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "password_hash", Value: passwordHash},
+			{Key: "updated_at", Value: at},
+		}}},
+	)
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return moozo.ErrUserNotFound
+	}
+	return nil
+}
+
 // emailCollation must match the email_unique index in schemas/users.json;
 // a query uses that index only with the same collation.
 var emailCollation = &options.Collation{Locale: "en", Strength: 2}

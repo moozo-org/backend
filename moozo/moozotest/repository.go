@@ -25,12 +25,14 @@ type Repository struct {
 	users    []*moozo.User
 	sessions map[moozo.SessionTokenHash]*moozo.Session
 	codes    map[uuid.UUID]*moozo.VerificationCode
+	resets   map[uuid.UUID]*moozo.VerificationCode
 }
 
 var (
-	_ moozo.UserRepository             = (*Repository)(nil)
-	_ moozo.SessionRepository          = (*Repository)(nil)
-	_ moozo.VerificationCodeRepository = (*Repository)(nil)
+	_ moozo.UserRepository              = (*Repository)(nil)
+	_ moozo.SessionRepository           = (*Repository)(nil)
+	_ moozo.VerificationCodeRepository  = (*Repository)(nil)
+	_ moozo.PasswordResetCodeRepository = (*Repository)(nil)
 )
 
 // Users returns the registered users, in registration order.
@@ -88,6 +90,21 @@ func (r *Repository) ActivateUser(_ context.Context, id uuid.UUID, at time.Time)
 	return moozo.ErrUserNotFound
 }
 
+func (r *Repository) UpdatePassword(_ context.Context, id uuid.UUID, passwordHash string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
+	for _, u := range r.users {
+		if u.ID == id {
+			u.PasswordHash, u.UpdatedAt = passwordHash, at
+			return nil
+		}
+	}
+	return moozo.ErrUserNotFound
+}
+
 func (r *Repository) findUser(email string) *moozo.User {
 	for _, u := range r.users {
 		if strings.EqualFold(u.Email, email) {
@@ -132,65 +149,122 @@ func (r *Repository) DeleteSession(_ context.Context, hash moozo.SessionTokenHas
 	return nil
 }
 
-// VerificationCode returns a copy of the user's stored code, or nil.
-func (r *Repository) VerificationCode(userID uuid.UUID) *moozo.VerificationCode {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if c, ok := r.codes[userID]; ok {
-		cp := *c
-		return &cp
-	}
-	return nil
-}
-
-func (r *Repository) SaveVerificationCode(_ context.Context, c *moozo.VerificationCode) error {
+func (r *Repository) DeleteUserSessions(_ context.Context, userID uuid.UUID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.Err != nil {
 		return r.Err
 	}
-	if r.codes == nil {
-		r.codes = make(map[uuid.UUID]*moozo.VerificationCode)
+	for hash, s := range r.sessions {
+		if s.UserID == userID {
+			delete(r.sessions, hash)
+		}
 	}
-	cp := *c
-	r.codes[c.UserID] = &cp
 	return nil
 }
 
+// VerificationCode returns a copy of the user's stored verification code, or
+// nil.
+func (r *Repository) VerificationCode(userID uuid.UUID) *moozo.VerificationCode {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return copyCode(r.codes[userID])
+}
+
+// PasswordResetCode returns a copy of the user's stored reset code, or nil.
+func (r *Repository) PasswordResetCode(userID uuid.UUID) *moozo.VerificationCode {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return copyCode(r.resets[userID])
+}
+
+func (r *Repository) SaveVerificationCode(_ context.Context, c *moozo.VerificationCode) error {
+	return r.saveCode(&r.codes, c)
+}
+
 func (r *Repository) FindVerificationCode(_ context.Context, userID uuid.UUID) (*moozo.VerificationCode, error) {
+	return r.findCode(r.codes, userID)
+}
+
+func (r *Repository) ConsumeVerificationAttempt(_ context.Context, userID uuid.UUID) (*moozo.VerificationCode, error) {
+	return r.consumeCode(r.codes, userID)
+}
+
+func (r *Repository) DeleteVerificationCode(_ context.Context, userID uuid.UUID) error {
+	_, err := r.deleteCode(r.codes, userID)
+	return err
+}
+
+func (r *Repository) SavePasswordResetCode(_ context.Context, c *moozo.VerificationCode) error {
+	return r.saveCode(&r.resets, c)
+}
+
+func (r *Repository) FindPasswordResetCode(_ context.Context, userID uuid.UUID) (*moozo.VerificationCode, error) {
+	return r.findCode(r.resets, userID)
+}
+
+func (r *Repository) ConsumePasswordResetAttempt(_ context.Context, userID uuid.UUID) (*moozo.VerificationCode, error) {
+	return r.consumeCode(r.resets, userID)
+}
+
+func (r *Repository) DeletePasswordResetCode(_ context.Context, userID uuid.UUID) (bool, error) {
+	return r.deleteCode(r.resets, userID)
+}
+
+func copyCode(c *moozo.VerificationCode) *moozo.VerificationCode {
+	if c == nil {
+		return nil
+	}
+	cp := *c
+	return &cp
+}
+
+func (r *Repository) saveCode(codes *map[uuid.UUID]*moozo.VerificationCode, c *moozo.VerificationCode) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.Err != nil {
+		return r.Err
+	}
+	if *codes == nil {
+		*codes = make(map[uuid.UUID]*moozo.VerificationCode)
+	}
+	(*codes)[c.UserID] = copyCode(c)
+	return nil
+}
+
+func (r *Repository) findCode(codes map[uuid.UUID]*moozo.VerificationCode, userID uuid.UUID) (*moozo.VerificationCode, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.Err != nil {
 		return nil, r.Err
 	}
-	if c, ok := r.codes[userID]; ok {
-		cp := *c
-		return &cp, nil
+	if c, ok := codes[userID]; ok {
+		return copyCode(c), nil
 	}
 	return nil, moozo.ErrVerificationCodeNotFound
 }
 
-func (r *Repository) ConsumeVerificationAttempt(_ context.Context, userID uuid.UUID) (*moozo.VerificationCode, error) {
+func (r *Repository) consumeCode(codes map[uuid.UUID]*moozo.VerificationCode, userID uuid.UUID) (*moozo.VerificationCode, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.Err != nil {
 		return nil, r.Err
 	}
-	c, ok := r.codes[userID]
+	c, ok := codes[userID]
 	if !ok {
 		return nil, moozo.ErrVerificationCodeNotFound
 	}
 	c.Attempts++
-	cp := *c
-	return &cp, nil
+	return copyCode(c), nil
 }
 
-func (r *Repository) DeleteVerificationCode(_ context.Context, userID uuid.UUID) error {
+func (r *Repository) deleteCode(codes map[uuid.UUID]*moozo.VerificationCode, userID uuid.UUID) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.Err != nil {
-		return r.Err
+		return false, r.Err
 	}
-	delete(r.codes, userID)
-	return nil
+	_, ok := codes[userID]
+	delete(codes, userID)
+	return ok, nil
 }

@@ -61,26 +61,53 @@ func (d verificationCodeDocument) toVerificationCode() (*moozo.VerificationCode,
 }
 
 func (r *Repository) SaveVerificationCode(ctx context.Context, c *moozo.VerificationCode) error {
-	d := newVerificationCodeDocument(c)
-	_, err := r.codes.ReplaceOne(ctx, bson.D{{Key: "_id", Value: d.UserID}}, d, options.Replace().SetUpsert(true))
-	return err
+	return codeStore{r.codes}.save(ctx, c)
 }
 
 func (r *Repository) FindVerificationCode(ctx context.Context, userID uuid.UUID) (*moozo.VerificationCode, error) {
-	return decodeVerificationCode(r.codes.FindOne(ctx, bson.D{{Key: "_id", Value: uuidID(userID)}}))
+	return codeStore{r.codes}.find(ctx, userID)
 }
 
 func (r *Repository) ConsumeVerificationAttempt(ctx context.Context, userID uuid.UUID) (*moozo.VerificationCode, error) {
-	return decodeVerificationCode(r.codes.FindOneAndUpdate(ctx,
+	return codeStore{r.codes}.consume(ctx, userID)
+}
+
+func (r *Repository) DeleteVerificationCode(ctx context.Context, userID uuid.UUID) error {
+	_, err := codeStore{r.codes}.delete(ctx, userID)
+	return err
+}
+
+// codeStore implements the code operations over a collection of
+// verificationCodeDocuments; verification and password-reset codes each have
+// their own collection.
+type codeStore struct {
+	coll *mongo.Collection
+}
+
+func (s codeStore) save(ctx context.Context, c *moozo.VerificationCode) error {
+	d := newVerificationCodeDocument(c)
+	_, err := s.coll.ReplaceOne(ctx, bson.D{{Key: "_id", Value: d.UserID}}, d, options.Replace().SetUpsert(true))
+	return err
+}
+
+func (s codeStore) find(ctx context.Context, userID uuid.UUID) (*moozo.VerificationCode, error) {
+	return decodeVerificationCode(s.coll.FindOne(ctx, bson.D{{Key: "_id", Value: uuidID(userID)}}))
+}
+
+func (s codeStore) consume(ctx context.Context, userID uuid.UUID) (*moozo.VerificationCode, error) {
+	return decodeVerificationCode(s.coll.FindOneAndUpdate(ctx,
 		bson.D{{Key: "_id", Value: uuidID(userID)}},
 		bson.D{{Key: "$inc", Value: bson.D{{Key: "attempts", Value: int32(1)}}}},
 		options.FindOneAndUpdate().SetReturnDocument(options.After),
 	))
 }
 
-func (r *Repository) DeleteVerificationCode(ctx context.Context, userID uuid.UUID) error {
-	_, err := r.codes.DeleteOne(ctx, bson.D{{Key: "_id", Value: uuidID(userID)}})
-	return err
+func (s codeStore) delete(ctx context.Context, userID uuid.UUID) (bool, error) {
+	res, err := s.coll.DeleteOne(ctx, bson.D{{Key: "_id", Value: uuidID(userID)}})
+	if err != nil {
+		return false, err
+	}
+	return res.DeletedCount > 0, nil
 }
 
 func decodeVerificationCode(res *mongo.SingleResult) (*moozo.VerificationCode, error) {

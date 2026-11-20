@@ -94,3 +94,23 @@ func userResponse(u *moozo.User) generated.User {
 		CreatedAt: u.CreatedAt,
 	}
 }
+
+func (h *Handler) ForgotPassword(ctx context.Context, req *generated.ForgotPasswordRequest) error {
+	_, err := h.app.Commands.ForgotPassword.Execute(ctx, command.ForgotPassword{Email: req.Email})
+	return err
+}
+
+func (h *Handler) ResetPassword(ctx context.Context, req *generated.ResetPasswordRequest) (generated.ResetPasswordRes, error) {
+	_, err := h.app.Commands.ResetPassword.Execute(ctx, command.ResetPassword{
+		Email:       req.Email,
+		Code:        req.Code,
+		NewPassword: req.NewPassword,
+	})
+	if errors.Is(err, command.ErrInvalidResetCode) || errors.Is(err, command.ErrInvalidInput) {
+		return &generated.Error{ErrorMessage: err.Error()}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &generated.ResetPasswordNoContent{}, nil
+}

@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"time"
@@ -62,29 +61,17 @@ func (h VerifyEmailHandler) Execute(ctx context.Context, cmd VerifyEmail) (struc
 	return struct{}{}, nil
 }
 
-// checkCode spends one attempt on u's code and compares it with code. The
-// attempt is counted before comparing, so concurrent guesses cannot exceed
-// MaxVerificationAttempts. A code that can no longer succeed is deleted.
+// checkCode spends one attempt on u's verification code; see codeAttempts.
 func (h VerifyEmailHandler) checkCode(ctx context.Context, u *moozo.User, code string) error {
-	c, err := h.codes.ConsumeVerificationAttempt(ctx, u.ID)
-	if errors.Is(err, moozo.ErrVerificationCodeNotFound) {
+	ok, err := codeAttempts{
+		consume: h.codes.ConsumeVerificationAttempt,
+		remove:  h.codes.DeleteVerificationCode,
+	}.check(ctx, u.ID, code)
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return ErrInvalidVerificationCode
 	}
-	if err != nil {
-		return fmt.Errorf("consume verification attempt: %w", err)
-	}
-
-	hash := moozo.HashVerificationCode(code)
-	matches := subtle.ConstantTimeCompare(hash[:], c.CodeHash[:]) == 1
-	expired := !time.Now().Before(c.ExpiresAt)
-	if matches && !expired && c.Attempts <= MaxVerificationAttempts {
-		return nil
-	}
-
-	if expired || c.Attempts >= MaxVerificationAttempts {
-		if err := h.codes.DeleteVerificationCode(ctx, u.ID); err != nil {
-			return fmt.Errorf("delete verification code: %w", err)
-		}
-	}
-	return ErrInvalidVerificationCode
+	return nil
 }

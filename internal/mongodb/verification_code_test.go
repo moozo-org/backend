@@ -114,3 +114,40 @@ func TestConsumeVerificationAttemptWithoutCode(t *testing.T) {
 		t.Errorf("ConsumeVerificationAttempt() error = %v, want ErrVerificationCodeNotFound", err)
 	}
 }
+
+// Reset codes live in their own collection: saving one keeps the user's
+// verification code, and deleting reports whether there was one.
+func TestPasswordResetCodes(t *testing.T) {
+	repo := newRepository(t)
+	userID := uuid.Must(uuid.NewV7())
+	verification, reset := newVerificationCode(userID), newVerificationCode(userID)
+	if err := repo.SaveVerificationCode(t.Context(), verification); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SavePasswordResetCode(t.Context(), reset); err != nil {
+		t.Fatalf("SavePasswordResetCode() error = %v", err)
+	}
+
+	if got, err := repo.FindVerificationCode(t.Context(), userID); err != nil || *got != *verification {
+		t.Errorf("verification code = %+v, %v; want %+v", got, err, verification)
+	}
+	got, err := repo.ConsumePasswordResetAttempt(t.Context(), userID)
+	if err != nil {
+		t.Fatalf("ConsumePasswordResetAttempt() error = %v", err)
+	}
+	want := *reset
+	want.Attempts = 1
+	if *got != want {
+		t.Errorf("consumed %+v, want %+v", *got, want)
+	}
+
+	for i, wantDeleted := range []bool{true, false} {
+		deleted, err := repo.DeletePasswordResetCode(t.Context(), userID)
+		if err != nil || deleted != wantDeleted {
+			t.Errorf("delete #%d = %v, %v; want %v", i+1, deleted, err, wantDeleted)
+		}
+	}
+	if _, err := repo.FindPasswordResetCode(t.Context(), userID); !errors.Is(err, moozo.ErrVerificationCodeNotFound) {
+		t.Errorf("after delete: error = %v, want ErrVerificationCodeNotFound", err)
+	}
+}

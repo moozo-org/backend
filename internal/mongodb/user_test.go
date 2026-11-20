@@ -147,3 +147,29 @@ func TestActivateUser(t *testing.T) {
 		t.Errorf("ActivateUser(unknown) error = %v, want %v", err, moozo.ErrUserNotFound)
 	}
 }
+
+func TestUpdatePassword(t *testing.T) {
+	repo := newRepository(t)
+	jane := newUser("jane@example.com", moozo.RolePlanner)
+	if err := repo.Register(t.Context(), jane); err != nil {
+		t.Fatal(err)
+	}
+
+	at := jane.UpdatedAt.Add(time.Hour)
+	if err := repo.UpdatePassword(t.Context(), jane.ID, "$2a$10$new", at); err != nil {
+		t.Fatalf("UpdatePassword() error = %v", err)
+	}
+	want := *jane
+	want.PasswordHash, want.UpdatedAt = "$2a$10$new", at
+	got, err := repo.FindUserByEmail(t.Context(), jane.Email)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *got != want {
+		t.Errorf("stored %+v, want %+v", *got, want)
+	}
+
+	if err := repo.UpdatePassword(t.Context(), uuid.Must(uuid.NewV7()), "$2a$10$new", at); !errors.Is(err, moozo.ErrUserNotFound) {
+		t.Errorf("unknown id: error = %v, want ErrUserNotFound", err)
+	}
+}
