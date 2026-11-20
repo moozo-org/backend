@@ -49,4 +49,9 @@ type UserRepository interface {
 	// FindUserByEmail matches email case-insensitively and returns
 	// ErrUserNotFound when there is no such account.
 	FindUserByEmail(ctx context.Context, email string) (*User, error)
+	// FindUserByID returns ErrUserNotFound when there is no such account.
+	FindUserByID(ctx context.Context, id uuid.UUID) (*User, error)
+	// UpdatePassword replaces the user's password hash and sets UpdatedAt to
+	// at. It returns ErrUserNotFound when there is no such account.
+	UpdatePassword(ctx context.Context, id uuid.UUID, passwordHash string, at time.Time) error
 }

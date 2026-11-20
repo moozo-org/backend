@@ -85,3 +85,32 @@ func TestSessions(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteOtherSessions(t *testing.T) {
+	repo := newRepository(t)
+	keep, other, bobs := newSession(), newSession(), newSession()
+	other.UserID = keep.UserID
+	for _, s := range []*moozo.Session{keep, other, bobs} {
+		if err := repo.CreateSession(t.Context(), s); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := repo.DeleteOtherSessions(t.Context(), keep.UserID, keep.TokenHash); err != nil {
+		t.Fatalf("DeleteOtherSessions() error = %v", err)
+	}
+
+	for name, tc := range map[string]struct {
+		s    *moozo.Session
+		kept bool
+	}{
+		"kept session":           {s: keep, kept: true},
+		"same user's other":      {s: other},
+		"another user's session": {s: bobs, kept: true},
+	} {
+		_, err := repo.FindSession(t.Context(), tc.s.TokenHash)
+		if got := err == nil; got != tc.kept {
+			t.Errorf("%s: kept = %t, want %t (err = %v)", name, got, tc.kept, err)
+		}
+	}
+}

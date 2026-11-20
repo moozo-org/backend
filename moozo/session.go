@@ -50,4 +50,6 @@ type SessionRepository interface {
 	FindSession(ctx context.Context, hash SessionTokenHash) (*Session, error)
 	// DeleteSession is idempotent.
 	DeleteSession(ctx context.Context, hash SessionTokenHash) error
+	// DeleteOtherSessions deletes every session of userID except keep.
+	DeleteOtherSessions(ctx context.Context, userID uuid.UUID, keep SessionTokenHash) error
 }

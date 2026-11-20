@@ -67,3 +67,25 @@ func userResponse(u *moozo.User) generated.User {
 		CreatedAt: u.CreatedAt,
 	}
 }
+
+func (h *Handler) ChangePassword(ctx context.Context, req *generated.ChangePasswordRequest) (generated.ChangePasswordRes, error) {
+	s, ok := sessionFrom(ctx)
+	if !ok {
+		return nil, errors.New("change password: no session in context; is bearerAuth declared on the operation?")
+	}
+	_, err := h.app.Commands.ChangePassword.Execute(ctx, command.ChangePassword{
+		UserID:          s.UserID,
+		Session:         s.TokenHash,
+		CurrentPassword: req.CurrentPassword,
+		NewPassword:     req.NewPassword,
+	})
+	switch {
+	case errors.Is(err, command.ErrWrongPassword):
+		return &generated.ChangePasswordForbidden{ErrorMessage: err.Error()}, nil
+	case errors.Is(err, command.ErrInvalidInput):
+		return &generated.ChangePasswordBadRequest{ErrorMessage: err.Error()}, nil
+	case err != nil:
+		return nil, err
+	}
+	return &generated.ChangePasswordNoContent{}, nil
+}

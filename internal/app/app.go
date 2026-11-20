@@ -15,9 +15,10 @@ type Application struct {
 }
 
 type Commands struct {
-	RegisterUser CommandHandler[command.RegisterUser, *moozo.User]
-	Login        CommandHandler[command.Login, *command.LoginResult]
-	Logout       CommandHandler[command.Logout, struct{}]
+	RegisterUser   CommandHandler[command.RegisterUser, *moozo.User]
+	Login          CommandHandler[command.Login, *command.LoginResult]
+	Logout         CommandHandler[command.Logout, struct{}]
+	ChangePassword CommandHandler[command.ChangePassword, struct{}]
 }
 
 type Queries struct {
@@ -27,9 +28,10 @@ type Queries struct {
 func New(users moozo.UserRepository, sessions moozo.SessionRepository) Application {
 	return Application{
 		Commands: Commands{
-			RegisterUser: command.NewRegisterUserHandler(users),
-			Login:        command.NewLoginHandler(users, sessions),
-			Logout:       command.NewLogoutHandler(sessions),
+			RegisterUser:   command.NewRegisterUserHandler(users),
+			Login:          command.NewLoginHandler(users, sessions),
+			Logout:         command.NewLogoutHandler(sessions),
+			ChangePassword: command.NewChangePasswordHandler(users, sessions),
 		},
 		Queries: Queries{
 			Authenticate: query.NewAuthenticateHandler(sessions),

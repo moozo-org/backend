@@ -25,6 +25,7 @@ Brings up the API on `:8080` and MongoDB on `:27017`.
 | `POST /auth/register` | Create a `planner` or `provider` account |
 | `POST /auth/login` | Exchange email and password for a session token |
 | `POST /auth/logout` | Revoke the current session (`Authorization: Bearer <token>`) |
+| `POST /auth/change-password` | Change the password (current + new); revokes the user's other sessions |
 | `GET /docs` | Swagger UI |
 | `GET /docs/openapi.yaml` | The OpenAPI spec the server was generated from |
 
@@ -145,6 +146,11 @@ query and puts the `moozo.Session` in the request context.
 - Only the token's SHA-256 is stored, as the `_id` of the `sessions`
   collection, so a database leak does not hand out working tokens.
 - `POST /auth/logout` deletes the session: revocation is immediate.
+- `POST /auth/change-password` needs the current password too, so a stolen
+  token alone cannot take over the account. It then deletes every other
+  session of the user (through the `user_id` index on `sessions`) and keeps
+  the caller's. A wrong current password is a 403, not a 401, so clients do
+  not mistake it for an expired session.
 - The session stores the user's role at login, so authorization needs no user
   lookup. Anything that changes a user's role must also delete their
   sessions, or the old role lasts until they expire.

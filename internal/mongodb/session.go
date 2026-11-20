@@ -35,7 +35,7 @@ func tokenHashID(h moozo.SessionTokenHash) bson.Binary {
 func newSessionDocument(s *moozo.Session) sessionDocument {
 	return sessionDocument{
 		TokenHash: tokenHashID(s.TokenHash),
-		UserID:    bson.Binary{Subtype: bson.TypeBinaryUUID, Data: s.UserID[:]},
+		UserID:    userID(s.UserID),
 		Role:      string(s.Role),
 		CreatedAt: s.CreatedAt,
 		ExpiresAt: s.ExpiresAt,
@@ -81,5 +81,14 @@ func (r *Repository) FindSession(ctx context.Context, hash moozo.SessionTokenHas
 
 func (r *Repository) DeleteSession(ctx context.Context, hash moozo.SessionTokenHash) error {
 	_, err := r.sessions.DeleteOne(ctx, bson.D{{Key: "_id", Value: tokenHashID(hash)}})
+	return err
+}
+
+// DeleteOtherSessions uses the user_id index from schemas/sessions.json.
+func (r *Repository) DeleteOtherSessions(ctx context.Context, id uuid.UUID, keep moozo.SessionTokenHash) error {
+	_, err := r.sessions.DeleteMany(ctx, bson.D{
+		{Key: "user_id", Value: userID(id)},
+		{Key: "_id", Value: bson.D{{Key: "$ne", Value: tokenHashID(keep)}}},
+	})
 	return err
 }
