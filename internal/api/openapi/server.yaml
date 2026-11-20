@@ -9,6 +9,10 @@ paths:
     $ref: "paths/auth_login.yaml"
   /auth/logout:
     $ref: "paths/auth_logout.yaml"
+  /auth/verify:
+    $ref: "paths/auth_verify.yaml"
+  /auth/resend-verification:
+    $ref: "paths/auth_resend_verification.yaml"
 components:
   securitySchemes:
     bearerAuth:

@@ -19,7 +19,10 @@ import (
 	"moozo/internal/api/openapi/generated"
 	"moozo/internal/app"
 	"moozo/internal/config"
+	"moozo/internal/mail"
 	"moozo/internal/mongodb"
+	"moozo/moozo"
+	"moozo/pkg/brevo"
 )
 
 const (
@@ -49,6 +52,11 @@ func main() {
 }
 
 func run(cfg Config, logger *zap.Logger) error {
+	mailer, err := newMailer(cfg, logger)
+	if err != nil {
+		return err
+	}
+
 	db, disconnect, err := mongodb.Connect(cfg.MongoURI, cfg.MongoDatabase)
 	if err != nil {
 		return err
@@ -62,7 +70,7 @@ func run(cfg Config, logger *zap.Logger) error {
 		return err
 	}
 
-	handler := api.NewHandler(logger, cfg.Production, app.New(repo, repo))
+	handler := api.NewHandler(logger, cfg.Production, app.New(repo, repo, repo, mailer))
 
 	srv, err := generated.NewServer(handler, handler,
 		generated.WithErrorHandler(api.ErrorHandler(logger, cfg.Production)),
@@ -115,9 +123,30 @@ func run(cfg Config, logger *zap.Logger) error {
 	return httpSrv.Shutdown(shutdownCtx)
 }
 
+// newMailer sends through Brevo when BREVO_API_KEY is set. Without it, codes
+// are logged instead, which production refuses.
+func newMailer(cfg Config, logger *zap.Logger) (moozo.Mailer, error) {
+	switch {
+	case cfg.BrevoAPIKey != "":
+		if cfg.MailFromEmail == "" {
+			return nil, errors.New("MAIL_FROM_EMAIL is required with BREVO_API_KEY")
+		}
+		return mail.NewBrevo(brevo.NewClient(cfg.BrevoAPIKey), cfg.MailFromEmail, cfg.MailFromName), nil
+	case cfg.Production:
+		return nil, errors.New("BREVO_API_KEY is required when PRODUCTION is true")
+	default:
+		logger.Warn("BREVO_API_KEY is unset: verification codes are logged, not emailed")
+		return mail.NewLog(logger), nil
+	}
+}
+
 type Config struct {
 	config.Environment
 	MongoURI      string `envconfig:"MONGODB_URI" default:"mongodb://localhost:27017"`
 	MongoDatabase string `envconfig:"MONGODB_DATABASE" default:"moozo"`
 	Port          int    `envconfig:"PORT" default:"8080"`
+
+	BrevoAPIKey   string `envconfig:"BREVO_API_KEY"`
+	MailFromEmail string `envconfig:"MAIL_FROM_EMAIL"`
+	MailFromName  string `envconfig:"MAIL_FROM_NAME" default:"Moozo"`
 }

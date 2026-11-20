@@ -23,6 +23,7 @@ func TestRegisterUser(t *testing.T) {
 		cmd      RegisterUser
 		existing []*moozo.User // registered before cmd runs
 		repoErr  error
+		mailErr  error
 		wantErr  error
 	}{
 		"planner":  {cmd: RegisterUser{Email: "jane@example.com", Password: "correct horse", Role: moozo.RolePlanner}},
@@ -52,6 +53,12 @@ func TestRegisterUser(t *testing.T) {
 			existing: []*moozo.User{{Email: "jane@example.com"}},
 			wantErr:  moozo.ErrEmailTaken,
 		},
+		// The account is created anyway; the user can ask for another code.
+		"mail failure": {
+			cmd:     RegisterUser{Email: "jane@example.com", Password: "password123", Role: moozo.RolePlanner},
+			mailErr: errBoom,
+			wantErr: ErrVerificationNotSent,
+		},
 		"repository failure": {
 			cmd:     RegisterUser{Email: "jane@example.com", Password: "password123", Role: moozo.RolePlanner},
 			repoErr: errBoom,
@@ -69,10 +76,15 @@ func TestRegisterUser(t *testing.T) {
 					}
 				}
 				repo.Err = tc.repoErr
+				mailer := &moozotest.Mailer{Err: tc.mailErr}
 
-				u, err := NewRegisterUserHandler(repo).Execute(t.Context(), tc.cmd)
+				u, err := NewRegisterUserHandler(repo, repo, mailer).Execute(t.Context(), tc.cmd)
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("Execute() error = %v, want %v", err, tc.wantErr)
+				}
+				if errors.Is(err, ErrVerificationNotSent) {
+					assertRegistered(t, pending(tc.cmd), u, repo)
+					return
 				}
 				if tc.wantErr != nil {
 					if len(repo.Users()) != len(tc.existing) {
@@ -81,21 +93,48 @@ func TestRegisterUser(t *testing.T) {
 					return
 				}
 
-				assertRegistered(t, tc.cmd, u, repo)
+				assertRegistered(t, pending(tc.cmd), u, repo)
+				assertCodeSent(t, u, repo, mailer)
 			})
 		})
 	}
 }
 
+// pending is the CreateUser that RegisterUser runs for cmd.
+func pending(cmd RegisterUser) CreateUser {
+	return CreateUser{Email: cmd.Email, Password: cmd.Password, Role: cmd.Role, Status: moozo.StatusPending}
+}
+
+// assertCodeSent checks that u was emailed exactly one code, stored for
+// VerificationCodeLifetime.
+func assertCodeSent(t *testing.T, u *moozo.User, repo *moozotest.Repository, mailer *moozotest.Mailer) {
+	t.Helper()
+
+	sent := mailer.Sent()
+	if len(sent) != 1 || sent[0].Email != u.Email {
+		t.Fatalf("sent %+v, want one code to %s", sent, u.Email)
+	}
+	c := repo.VerificationCode(u.ID)
+	if c == nil {
+		t.Fatal("no verification code stored")
+	}
+	if c.CodeHash != moozo.HashVerificationCode(sent[0].Code) {
+		t.Error("stored hash does not match the sent code")
+	}
+	if c.Attempts != 0 || !c.ExpiresAt.Equal(c.CreatedAt.Add(VerificationCodeLifetime)) {
+		t.Errorf("code = %+v, want 0 attempts and a %v lifetime", c, VerificationCodeLifetime)
+	}
+}
+
 // assertRegistered checks the user Execute built from cmd and handed to repo.
-func assertRegistered(t *testing.T, cmd RegisterUser, u *moozo.User, repo *moozotest.Repository) {
+func assertRegistered(t *testing.T, cmd CreateUser, u *moozo.User, repo *moozotest.Repository) {
 	t.Helper()
 
 	if want := strings.ToLower(strings.TrimSpace(cmd.Email)); u.Email != want {
 		t.Errorf("Email = %q, want %q", u.Email, want)
 	}
-	if u.Role != cmd.Role {
-		t.Errorf("Role = %q, want %q", u.Role, cmd.Role)
+	if u.Role != cmd.Role || u.Status != cmd.Status {
+		t.Errorf("Role/Status = %q/%q, want %q/%q", u.Role, u.Status, cmd.Role, cmd.Status)
 	}
 	if u.ID.Version() != 7 {
 		t.Errorf("ID %s is UUID v%d, want v7", u.ID, u.ID.Version())

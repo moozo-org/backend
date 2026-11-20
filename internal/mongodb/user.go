@@ -25,17 +25,24 @@ type userDocument struct {
 	Email        string      `bson:"email"`
 	PasswordHash string      `bson:"password_hash"`
 	Role         string      `bson:"role"`
+	Status       string      `bson:"status"`
 	CreatedAt    time.Time   `bson:"created_at"`
 	UpdatedAt    time.Time   `bson:"updated_at"`
 }
 
+// uuidID is the BSON form of a UUID key. Subtype 4 is the standard BSON
+// encoding for UUIDs.
+func uuidID(id uuid.UUID) bson.Binary {
+	return bson.Binary{Subtype: bson.TypeBinaryUUID, Data: id[:]}
+}
+
 func newUserDocument(u *moozo.User) userDocument {
 	return userDocument{
-		// Subtype 4 is the standard BSON encoding for UUIDs.
-		ID:           bson.Binary{Subtype: bson.TypeBinaryUUID, Data: u.ID[:]},
+		ID:           uuidID(u.ID),
 		Email:        u.Email,
 		PasswordHash: u.PasswordHash,
 		Role:         string(u.Role),
+		Status:       string(u.Status),
 		CreatedAt:    u.CreatedAt,
 		UpdatedAt:    u.UpdatedAt,
 	}
@@ -51,6 +58,7 @@ func (d userDocument) toUser() (*moozo.User, error) {
 		Email:        d.Email,
 		PasswordHash: d.PasswordHash,
 		Role:         moozo.Role(d.Role),
+		Status:       moozo.Status(d.Status),
 		CreatedAt:    d.CreatedAt,
 		UpdatedAt:    d.UpdatedAt,
 	}, nil
@@ -80,4 +88,18 @@ func (r *Repository) FindUserByEmail(ctx context.Context, email string) (*moozo.
 		return nil, err
 	}
 	return d.toUser()
+}
+
+func (r *Repository) ActivateUser(ctx context.Context, id uuid.UUID, at time.Time) error {
+	res, err := r.users.UpdateOne(ctx, bson.D{{Key: "_id", Value: uuidID(id)}}, bson.D{{Key: "$set", Value: bson.D{
+		{Key: "status", Value: string(moozo.StatusActive)},
+		{Key: "updated_at", Value: at},
+	}}})
+	if err != nil {
+		return err
+	}
+	if res.MatchedCount == 0 {
+		return moozo.ErrUserNotFound
+	}
+	return nil
 }

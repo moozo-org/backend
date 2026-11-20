@@ -28,20 +28,42 @@ type RegisterUser struct {
 	Role     moozo.Role
 }
 
+// ErrVerificationNotSent is returned, together with the created user, when
+// the account exists but its verification email could not be sent. The user
+// can ask for another one through ResendVerification.
+var ErrVerificationNotSent = errors.New("verification email not sent")
+
 type RegisterUserHandler struct {
 	create CreateUserHandler
+	send   sendVerificationCode
 }
 
-func NewRegisterUserHandler(users moozo.UserRepository) RegisterUserHandler {
-	return RegisterUserHandler{create: NewCreateUserHandler(users)}
+func NewRegisterUserHandler(users moozo.UserRepository, codes moozo.VerificationCodeRepository, mailer moozo.Mailer) RegisterUserHandler {
+	return RegisterUserHandler{
+		create: NewCreateUserHandler(users),
+		send:   sendVerificationCode{codes: codes, mailer: mailer},
+	}
 }
 
-// Execute returns the created user so the caller can respond without a
-// follow-up read. It returns moozo.ErrEmailTaken when the email is in use.
+// Execute creates a pending user and emails them a verification code. It
+// returns the created user so the caller can respond without a follow-up
+// read, and moozo.ErrEmailTaken when the email is in use.
 func (h RegisterUserHandler) Execute(ctx context.Context, cmd RegisterUser) (*moozo.User, error) {
 	if !cmd.Role.IsSelfService() {
 		return nil, fmt.Errorf("%w: %q", ErrRoleNotSelfService, cmd.Role)
 	}
 
-	return h.create.Execute(ctx, CreateUser(cmd))
+	u, err := h.create.Execute(ctx, CreateUser{
+		Email:    cmd.Email,
+		Password: cmd.Password,
+		Role:     cmd.Role,
+		Status:   moozo.StatusPending,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := h.send.send(ctx, u); err != nil {
+		return u, fmt.Errorf("%w: %w", ErrVerificationNotSent, err)
+	}
+	return u, nil
 }

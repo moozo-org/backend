@@ -19,6 +19,7 @@ type CreateUser struct {
 	Email    string
 	Password string
 	Role     moozo.Role
+	Status   moozo.Status
 }
 
 type CreateUserHandler struct {
@@ -50,9 +51,10 @@ func (h CreateUserHandler) Execute(ctx context.Context, cmd CreateUser) (*moozo.
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	u := &moozo.User{
 		ID:           id,
-		Email:        strings.ToLower(strings.TrimSpace(cmd.Email)),
+		Email:        normalizeEmail(cmd.Email),
 		PasswordHash: string(hash),
 		Role:         cmd.Role,
+		Status:       cmd.Status,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -61,4 +63,9 @@ func (h CreateUserHandler) Execute(ctx context.Context, cmd CreateUser) (*moozo.
 		return nil, fmt.Errorf("register user: %w", err)
 	}
 	return u, nil
+}
+
+// normalizeEmail is the form emails are stored and looked up in.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }

@@ -22,8 +22,10 @@ Brings up the API on `:8080` and MongoDB on `:27017`.
 
 | Endpoint | Description |
 |---|---|
-| `POST /auth/register` | Create a `planner` or `provider` account |
-| `POST /auth/login` | Exchange email and password for a session token |
+| `POST /auth/register` | Create a pending `planner` or `provider` account and email it a code |
+| `POST /auth/verify` | Activate a pending account with its six-digit code |
+| `POST /auth/resend-verification` | Email a new code to a pending account |
+| `POST /auth/login` | Exchange email and password for a session token (active accounts only) |
 | `POST /auth/logout` | Revoke the current session (`Authorization: Bearer <token>`) |
 | `GET /docs` | Swagger UI |
 | `GET /docs/openapi.yaml` | The OpenAPI spec the server was generated from |
@@ -46,13 +48,17 @@ internal/api/
     generate.go      //go:generate directives (bundle + codegen)
     bundled/         generated: the flattened spec
     generated/       generated: the ogen server
-moozo/               domain types: User, Session and their repositories
-  moozotest/         in-memory repository fake for tests above the database
+moozo/               domain types: User, Session, VerificationCode, their
+                     repositories, and the Mailer interface
+  moozotest/         in-memory repository and mailer fakes for tests above them
 internal/app/        application layer (CQRS): the HTTP handler calls a
   command/           command (changes state) or a query (reads state), which
   query/             holds the use case's logic and calls the repositories
+internal/mail/       Mailer implementations: the app's emails sent through
+                     pkg/brevo, and a logger for development
 internal/mongodb/     MongoDB repositories
   schemas/           one JSON validator + indexes file per collection
+pkg/brevo/           app-agnostic Brevo API client (email; SMS later)
 ```
 
 `bundled/` and `generated/` are git-ignored and rebuilt from `openapi/server.yaml`.
@@ -96,6 +102,9 @@ See `.env.example`.
 | `PRODUCTION` | `false` | When true, `/docs` and `/docs/openapi.yaml` are not registered |
 | `MONGODB_URI` | `mongodb://localhost:27017` | No auth — local development only |
 | `MONGODB_DATABASE` | `moozo` | |
+| `BREVO_API_KEY` | | Brevo API key for transactional email. Unset: verification codes are logged instead. Required when `PRODUCTION` is true |
+| `MAIL_FROM_EMAIL` | | Sender address; must be verified in Brevo. Required with `BREVO_API_KEY` |
+| `MAIL_FROM_NAME` | `Moozo` | Sender name |
 
 The server connects and pings MongoDB at startup and refuses to start if it
 can't.
@@ -115,10 +124,10 @@ edits roll out on deploy. Indexes removed from a file are not dropped — that
 needs a manual `dropIndex`.
 
 `moozo.User` has no storage tags; `internal/mongodb` maps it to a private
-`userDocument`. Three tests catch the copies drifting apart:
-`internal/mongodb/user_schema_test.go` (`users.json` vs `userDocument` and
-`moozo.Roles`) and `TestSpecRolesMatchDomain` in `internal/api` (the spec's
-role enums vs `moozo.Roles` / `moozo.SelfServiceRoles`).
+`userDocument`. Tests catch the copies drifting apart:
+`internal/mongodb/schema_test.go` (each schema file vs its document type, and
+the role and status enums vs `moozo.Roles` / `moozo.Statuses`) and
+`TestSpecEnumsMatchDomain` in `internal/api` (the spec's enums vs the domain's).
 
 | Field | Type | |
 |---|---|---|
@@ -126,6 +135,7 @@ role enums vs `moozo.Roles` / `moozo.SelfServiceRoles`).
 | `email` | string | lowercased and trimmed, unique ignoring case |
 | `password_hash` | string | bcrypt; never returned by the API |
 | `role` | `planner` \| `provider` \| `admin` | |
+| `status` | `pending` \| `active` | see [Email verification](#email-verification) |
 | `created_at`, `updated_at` | date | |
 
 `POST /auth/register` only accepts `planner` and `provider`: the spec's
@@ -133,6 +143,40 @@ role enums vs `moozo.Roles` / `moozo.SelfServiceRoles`).
 handler runs, and the register command checks again against `moozo.SelfServiceRoles`.
 Admins must be created some other way — locally, `go run ./cmd/seed` (see
 [Seeding test users](#seeding-test-users)). A taken email returns 409.
+
+## Email verification
+
+`POST /auth/register` creates the account as `pending` and emails it a
+six-digit code. A pending account cannot log in: the right password gets a 403
+(a wrong one still gets the usual 401, so the status is not revealed).
+`POST /auth/verify` with the email and code makes it `active`.
+
+- A code is valid for 15 minutes (`command.VerificationCodeLifetime`) and for
+  5 attempts (`command.MaxVerificationAttempts`); after either it is deleted
+  and the user must ask for a new one. Each attempt is counted atomically
+  before the comparison, so parallel guesses cannot exceed the limit.
+- Codes live in the `verification_codes` collection, keyed by user ID, so a
+  user has at most one: sending a new code replaces the old. Only the code's
+  SHA-256 is stored, and a TTL index on `expires_at` cleans up expired ones.
+- `POST /auth/resend-verification` always answers 202, whether the email is
+  unknown, already active or pending, and sends at most one code a minute
+  (`command.ResendCooldown`).
+- A wrong code, an expired one and an unknown email all get the same 400.
+  Verifying an already active account succeeds, so a retried request is
+  harmless.
+- If the email cannot be sent at sign-up, the account is still created
+  (201) and the failure is logged; the user can resend.
+- Seeded accounts are created `active`.
+
+Emails go through [Brevo](https://developers.brevo.com)'s transactional API,
+chosen because it also does SMS. `pkg/brevo` is a generic client for its API;
+`internal/mail` writes the application's emails and sends them with it. Without `BREVO_API_KEY`
+the server logs each code instead — look for `verification code` in the API
+logs. Production refuses to start without a key.
+
+> Users created before verification existed have no `status` and cannot log
+> in. Drop the local database (`docker compose down -v`, or `db.dropDatabase()`
+> in `mongosh`) and rerun the seed.
 
 ## Sessions
 

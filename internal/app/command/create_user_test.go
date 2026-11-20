@@ -16,13 +16,13 @@ func TestCreateUser(t *testing.T) {
 		t.Run(string(role), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				repo := &moozotest.Repository{}
-				cmd := CreateUser{Email: "jane@example.com", Password: "correct horse", Role: role}
+				cmd := CreateUser{Email: "jane@example.com", Password: "correct horse", Role: role, Status: moozo.StatusActive}
 
 				u, err := NewCreateUserHandler(repo).Execute(t.Context(), cmd)
 				if err != nil {
 					t.Fatalf("Execute() error = %v", err)
 				}
-				assertRegistered(t, RegisterUser(cmd), u, repo)
+				assertRegistered(t, cmd, u, repo)
 			})
 		})
 	}

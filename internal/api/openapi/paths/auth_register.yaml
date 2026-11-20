@@ -3,7 +3,9 @@ post:
   summary: Create an account
   description: >
     Self-service sign-up. Only the planner and provider roles can be requested
-    here; admin accounts cannot be created through this route.
+    here; admin accounts cannot be created through this route. The account
+    starts pending and a six-digit code is emailed to it; send it to
+    POST /auth/verify before logging in.
   requestBody:
     required: true
     content:

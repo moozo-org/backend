@@ -1,0 +1,5 @@
+type: string
+description: A pending account must verify its email before it can log in.
+enum:
+  - pending
+  - active

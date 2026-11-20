@@ -12,6 +12,7 @@ import (
 type Repository struct {
 	users    *mongo.Collection
 	sessions *mongo.Collection
+	codes    *mongo.Collection
 }
 
 // NewRepository applies every collection schema before returning, so a
@@ -23,5 +24,6 @@ func NewRepository(ctx context.Context, db *mongo.Database) (*Repository, error)
 	return &Repository{
 		users:    db.Collection(UsersCollectionName),
 		sessions: db.Collection(SessionsCollectionName),
+		codes:    db.Collection(VerificationCodesCollectionName),
 	}, nil
 }

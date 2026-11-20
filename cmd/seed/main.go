@@ -62,7 +62,9 @@ func run(cfg Config) error {
 	for _, role := range moozo.Roles {
 		for i := 1; i <= usersPerRole; i++ {
 			email := fmt.Sprintf("%s%d@moozo.test", role, i)
-			_, err := create.Execute(ctx, command.CreateUser{Email: email, Password: Password, Role: role})
+			_, err := create.Execute(ctx, command.CreateUser{
+				Email: email, Password: Password, Role: role, Status: moozo.StatusActive,
+			})
 			switch {
 			case errors.Is(err, moozo.ErrEmailTaken):
 				log.Printf("exists   %-8s %s", role, email)

@@ -22,7 +22,7 @@ func observed() (*zap.Logger, *observer.ObservedLogs) {
 
 func newTestHandler(production bool) *Handler {
 	logger, _ := observed()
-	return NewHandler(logger, production, app.New(&moozotest.Repository{}, &moozotest.Repository{}))
+	return NewHandler(logger, production, app.New(&moozotest.Repository{}, &moozotest.Repository{}, &moozotest.Repository{}, &moozotest.Mailer{}))
 }
 
 func TestErrorHandlerHidesDetailFromClient(t *testing.T) {

@@ -1,0 +1,18 @@
+post:
+  operationId: resendVerification
+  summary: Email a new verification code
+  description: >
+    Sends a new code to a pending account, invalidating the previous one. At
+    most one code is sent per minute. The response is the same whether or not
+    the email belongs to a pending account, so it reveals nothing.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/ResendVerificationRequest.yaml
+  responses:
+    '202':
+      description: A code is sent if the email belongs to a pending account
+    default:
+      $ref: ../components/responses/Error.yaml

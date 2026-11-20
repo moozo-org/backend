@@ -5,6 +5,9 @@ import (
 	"errors"
 	"net/http"
 
+	"go.uber.org/zap"
+
+	"moozo/internal/api/middleware"
 	"moozo/internal/api/openapi/generated"
 	"moozo/internal/app/command"
 	"moozo/moozo"
@@ -21,6 +24,11 @@ func (h *Handler) Register(ctx context.Context, req *generated.RegisterRequest) 
 		return &generated.RegisterBadRequest{ErrorMessage: err.Error()}, nil
 	case errors.Is(err, moozo.ErrEmailTaken):
 		return &generated.RegisterConflict{ErrorMessage: http.StatusText(http.StatusConflict)}, nil
+	case errors.Is(err, command.ErrVerificationNotSent):
+		// The account exists, so failing would make a retry hit 409; the user
+		// can ask for another code instead.
+		middleware.WithTrace(ctx, h.logger).Error("registered user without verification email",
+			zap.Stringer("user_id", u.ID), zap.Error(err))
 	case err != nil:
 		return nil, err
 	}
@@ -34,10 +42,12 @@ func (h *Handler) Login(ctx context.Context, req *generated.LoginRequest) (gener
 		Email:    req.Email,
 		Password: req.Password,
 	})
-	if errors.Is(err, command.ErrInvalidCredentials) {
-		return &generated.Error{ErrorMessage: err.Error()}, nil
-	}
-	if err != nil {
+	switch {
+	case errors.Is(err, command.ErrInvalidCredentials):
+		return &generated.LoginUnauthorized{ErrorMessage: err.Error()}, nil
+	case errors.Is(err, command.ErrEmailNotVerified):
+		return &generated.LoginForbidden{ErrorMessage: err.Error()}, nil
+	case err != nil:
 		return nil, err
 	}
 
@@ -59,11 +69,28 @@ func (h *Handler) Logout(ctx context.Context) (generated.LogoutRes, error) {
 	return &generated.LogoutNoContent{}, nil
 }
 
+func (h *Handler) VerifyEmail(ctx context.Context, req *generated.VerifyEmailRequest) (generated.VerifyEmailRes, error) {
+	_, err := h.app.Commands.VerifyEmail.Execute(ctx, command.VerifyEmail{Email: req.Email, Code: req.Code})
+	if errors.Is(err, command.ErrInvalidVerificationCode) {
+		return &generated.Error{ErrorMessage: err.Error()}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &generated.VerifyEmailNoContent{}, nil
+}
+
+func (h *Handler) ResendVerification(ctx context.Context, req *generated.ResendVerificationRequest) error {
+	_, err := h.app.Commands.ResendVerification.Execute(ctx, command.ResendVerification{Email: req.Email})
+	return err
+}
+
 func userResponse(u *moozo.User) generated.User {
 	return generated.User{
 		ID:        u.ID,
 		Email:     u.Email,
 		Role:      generated.Role(u.Role),
+		Status:    generated.UserStatus(u.Status),
 		CreatedAt: u.CreatedAt,
 	}
 }

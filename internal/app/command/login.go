@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +18,10 @@ const SessionLifetime = 7 * 24 * time.Hour
 // ErrInvalidCredentials covers both an unknown email and a wrong password, so
 // callers cannot tell which emails have accounts.
 var ErrInvalidCredentials = errors.New("invalid email or password")
+
+// ErrEmailNotVerified is returned for the right password on an account whose
+// email is not verified yet. Only someone holding the password learns it.
+var ErrEmailNotVerified = errors.New("email not verified")
 
 type Login struct {
 	Email    string
@@ -53,7 +56,7 @@ var dummyHash = sync.OnceValue(func() []byte {
 })
 
 func (h LoginHandler) Execute(ctx context.Context, cmd Login) (*LoginResult, error) {
-	u, err := h.users.FindUserByEmail(ctx, strings.ToLower(strings.TrimSpace(cmd.Email)))
+	u, err := h.users.FindUserByEmail(ctx, normalizeEmail(cmd.Email))
 	if errors.Is(err, moozo.ErrUserNotFound) {
 		_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(cmd.Password))
 		return nil, ErrInvalidCredentials
@@ -68,6 +71,9 @@ func (h LoginHandler) Execute(ctx context.Context, cmd Login) (*LoginResult, err
 	}
 	if err != nil {
 		return nil, fmt.Errorf("compare password: %w", err)
+	}
+	if u.Status != moozo.StatusActive {
+		return nil, ErrEmailNotVerified
 	}
 
 	token, hash := moozo.NewSessionToken()
