@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"errors"
 	"strings"
 	"testing"
@@ -12,12 +13,12 @@ import (
 	"moozo/moozo/moozotest"
 )
 
-func TestChangePassword(t *testing.T) {
-	const newPassword = "battery staple"
+const changedPassword = "battery staple"
 
+func TestChangePassword(t *testing.T) {
 	cases := map[string]struct {
 		current string // the current password the caller sends
-		next    string // the new password; newPassword when empty
+		next    string // the new password; changedPassword when empty
 		unknown bool   // the session's user does not exist
 		repoErr error
 		wantErr error
@@ -36,34 +37,19 @@ func TestChangePassword(t *testing.T) {
 			repo := &moozotest.Repository{}
 			jane := newJane(t, repo)
 			oldHash := jane.PasswordHash
-
-			// Jane is logged in twice; the second session asks for the change.
-			// Bob's session must survive whatever happens to Jane's.
-			_, other := moozo.NewSessionToken()
-			_, current := moozo.NewSessionToken()
-			_, bobs := moozo.NewSessionToken()
-			for _, s := range []*moozo.Session{
-				{TokenHash: other, UserID: jane.ID},
-				{TokenHash: current, UserID: jane.ID},
-				{TokenHash: bobs, UserID: uuid.Must(uuid.NewV7())},
-			} {
-				if err := repo.CreateSession(t.Context(), s); err != nil {
-					t.Fatal(err)
-				}
-			}
+			s := logInJaneTwiceAndBob(t, repo, jane)
 			repo.Err = tc.repoErr
 
-			next := tc.next
-			if next == "" {
-				next = newPassword
-			}
 			userID := jane.ID
 			if tc.unknown {
 				userID = uuid.Must(uuid.NewV7())
 			}
 
 			_, err := NewChangePasswordHandler(repo, repo).Execute(t.Context(), ChangePassword{
-				UserID: userID, Session: current, CurrentPassword: tc.current, NewPassword: next,
+				UserID:          userID,
+				Session:         s.current,
+				CurrentPassword: tc.current,
+				NewPassword:     cmp.Or(tc.next, changedPassword),
 			})
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("Execute() error = %v, want %v", err, tc.wantErr)
@@ -71,27 +57,68 @@ func TestChangePassword(t *testing.T) {
 			repo.Err = nil
 
 			if tc.wantErr != nil {
-				if jane.PasswordHash != oldHash {
-					t.Error("password changed despite the error")
-				}
-				if repo.Sessions() != 3 {
-					t.Errorf("sessions = %d, want all 3 kept", repo.Sessions())
-				}
-				return
-			}
-
-			if bcrypt.CompareHashAndPassword([]byte(jane.PasswordHash), []byte(newPassword)) != nil {
-				t.Error("new password does not match the stored hash")
-			}
-			if jane.UpdatedAt.IsZero() {
-				t.Error("UpdatedAt not set")
-			}
-			for hash, want := range map[moozo.SessionTokenHash]bool{other: false, current: true, bobs: true} {
-				_, err := repo.FindSession(t.Context(), hash)
-				if got := err == nil; got != want {
-					t.Errorf("session kept = %t, want %t", got, want)
-				}
+				checkChangeRejected(t, repo, jane, oldHash)
+			} else {
+				checkChangeApplied(t, repo, jane, s)
 			}
 		})
+	}
+}
+
+// changeSessions are the token hashes of the sessions a change password test
+// starts with.
+type changeSessions struct {
+	other   moozo.SessionTokenHash // jane's, not the one asking
+	current moozo.SessionTokenHash // jane's, the one asking for the change
+	bobs    moozo.SessionTokenHash // another user's
+}
+
+// logInJaneTwiceAndBob logs jane in twice and another user once. Bob's
+// session must survive whatever happens to jane's.
+func logInJaneTwiceAndBob(t *testing.T, repo *moozotest.Repository, jane *moozo.User) changeSessions {
+	t.Helper()
+	var s changeSessions
+	_, s.other = moozo.NewSessionToken()
+	_, s.current = moozo.NewSessionToken()
+	_, s.bobs = moozo.NewSessionToken()
+	for _, session := range []*moozo.Session{
+		{TokenHash: s.other, UserID: jane.ID},
+		{TokenHash: s.current, UserID: jane.ID},
+		{TokenHash: s.bobs, UserID: uuid.Must(uuid.NewV7())},
+	} {
+		if err := repo.CreateSession(t.Context(), session); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return s
+}
+
+// checkChangeRejected checks that a failed change kept jane's password and
+// every session.
+func checkChangeRejected(t *testing.T, repo *moozotest.Repository, jane *moozo.User, oldHash string) {
+	t.Helper()
+	if jane.PasswordHash != oldHash {
+		t.Error("password changed despite the error")
+	}
+	if repo.Sessions() != 3 {
+		t.Errorf("sessions = %d, want all 3 kept", repo.Sessions())
+	}
+}
+
+// checkChangeApplied checks that jane has the new password and that only her
+// other session was revoked.
+func checkChangeApplied(t *testing.T, repo *moozotest.Repository, jane *moozo.User, s changeSessions) {
+	t.Helper()
+	if bcrypt.CompareHashAndPassword([]byte(jane.PasswordHash), []byte(changedPassword)) != nil {
+		t.Error("new password does not match the stored hash")
+	}
+	if jane.UpdatedAt.IsZero() {
+		t.Error("UpdatedAt not set")
+	}
+	for hash, want := range map[moozo.SessionTokenHash]bool{s.other: false, s.current: true, s.bobs: true} {
+		_, err := repo.FindSession(t.Context(), hash)
+		if got := err == nil; got != want {
+			t.Errorf("session kept = %t, want %t", got, want)
+		}
 	}
 }
